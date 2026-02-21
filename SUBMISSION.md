@@ -8,60 +8,54 @@
 
 ### Deliverable 1 — One-sentence problem description
 
-<!-- Write your 1-sentence problem description here -->
+Fiction writers lack an interactive tool to externalize, interrogate, and stress-test their characters' psychology, settings, and story structure while actively developing a manuscript.
 
 ---
 
 ### Deliverable 2 — Why this is a problem for your specific user (1–2 paragraphs)
 
-<!-- Describe your user (job title, role, context) and explain why this problem matters to them -->
+See [PRODUCT.md — Why This Is a Problem for the Specific User](./docs/PRODUCT.md#why-this-is-a-problem-for-the-specific-user)
 
 ---
 
 ### Deliverable 3 — Evaluation questions / input-output pairs
 
-<!-- List the questions or input-output pairs you will use to evaluate your application -->
-
-| # | Input (Question) | Expected Output |
-|---|-----------------|-----------------|
-| 1 | | |
-| 2 | | |
-| 3 | | |
-| 4 | | |
-| 5 | | |
+See [PRODUCT.md — Evaluation Questions / Input-Output Pairs](./docs/PRODUCT.md#evaluation-questions--input-output-pairs) for the full table of 10 test scenarios using the [sample dataset](./notebooks/sample_data).
 
 ---
 
 ## 💡 Task 2: Solution
 
-### Deliverable 1 — Proposed solution description (1–2 paragraphs)
+### Deliverable 1 — Proposed solution description (1-2 paragraphs)
 
-<!-- Describe how the solution will look and feel to the user, and the tools you plan to use -->
+See [PRODUCT.md — Features & User Experience](./docs/PRODUCT.md#features--user-experience) for the full description of Phase 1 (Character Interview Mode) and Phase 2 (Scenario Simulation Mode).
 
 ---
 
 ### Deliverable 2 — Infrastructure diagram + tooling choices
 
-<!-- Insert or link your infrastructure diagram here (image, Excalidraw, Miro, etc.) -->
+See [ARCHITECTURE.md — Infrastructure Architecture](./docs/ARCHITECTURE.md#infrastructure-architecture) for the full Mermaid diagram and layer descriptions.
 
-| Component | Tool / Choice | One-sentence rationale |
-|-----------|--------------|------------------------|
-| LLM(s) | | |
-| Agent orchestration framework | | |
-| Tool(s) | | |
-| Embedding model | | |
-| Vector database | | |
-| Monitoring tool | | |
-| Evaluation framework | | |
-| User interface | | |
-| Deployment tool | | |
-| Other | | |
+| Component                     | Tool / Choice                                          | One-sentence rationale                                                     |
+| ----------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------- |
+| LLM(s)                        | GPT-4o                                                 | High-quality character voice and reasoning for in-character responses      |
+| Agent orchestration framework | LangGraph                                              | Stateless graph with supervisor pattern for clean multi-agent coordination |
+| Tool(s)                       | Character RAG Tool, Tavily Search Tool                 | RAG for author's own material; Tavily for external writing craft queries   |
+| Embedding model               | OpenAI `text-embedding-3-small`                        | Cost-effective, high-quality embeddings for dense retrieval                |
+| Vector database               | Qdrant Cloud                                           | Metadata filtering enables taxonomy-based hybrid retrieval                 |
+| Monitoring tool               | LangSmith                                              | Native LangGraph tracing with retrieval chain inspection                   |
+| Evaluation framework          | RAGAS                                                  | Faithfulness, context precision, context recall metrics                    |
+| User interface                | Next.js (Vercel)                                       | SSE streaming for real-time character responses                            |
+| Deployment tool               | Render (backend), Modal (ingestion), Vercel (frontend) | Separates concerns: API hosting, GPU-friendly batch jobs, static frontend  |
+| Other                         | Supabase (Auth, Postgres, Storage), Cohere Rerank      | Auth/data persistence; reranking improves retrieval quality                |
 
 ---
 
 ### Deliverable 3 — RAG and agent components
 
-<!-- Describe exactly what the RAG component does and exactly what the agent component does in your project -->
+**RAG Component:** Retrieves grounding context from the writer's uploaded documents via Qdrant. See [ARCHITECTURE.md — Retrieval Tool](./docs/ARCHITECTURE.md#retrieval-tool-langchain-tool) for dense vector search, taxonomy filtering (Option B), and Cohere reranking.
+
+**Agent Component:** A LangGraph supervisor orchestrates intent classification, tool calls, and delegation to sub-agents. See [ARCHITECTURE.md — Agent Graph](./docs/ARCHITECTURE.md#agent-graph) for the full flow including Gap Detection and Avatar agents.
 
 ---
 
@@ -71,32 +65,35 @@
 
 ### Deliverable 1 — Default chunking strategy
 
-<!-- Describe the chunking strategy you are using for your personal/domain data (e.g. fixed-size, recursive, semantic, document-based). Explain why this strategy fits your data type and use case. -->
+**Baseline (Option A):** `RecursiveCharacterTextSplitter` with hierarchy `["\n\n", "\n", ".", " "]`, 500 tokens, 50 overlap. Fast ingestion, no LLM calls.
+
+**Advanced (Option B):** `SemanticChunker` splits on embedding similarity to keep dialogue, action, and worldbuilding coherent as units.
+
+See [ARCHITECTURE.md — Pipeline Comparison](./docs/ARCHITECTURE.md#pipeline-comparison) for full comparison.
 
 ---
 
 ### Deliverable 2 — Data source, external API, and how they interact during usage
 
-<!-- 
-Cover all three of the following:
-1. Your personal/domain data: what it is, where it comes from, and what role it plays (the RAG knowledge base)
-2. The external API you are using (e.g. Tavily for web search): what it is and what role it plays (the agentic search tool)
-3. How the two interact during a typical user session — e.g. when does the agent hit the vector store vs. call the external API?
--->
+1. **Personal data:** Writer-uploaded `.md` and `.docx` files (story drafts, character notes, worldbuilding). Stored in Supabase Storage, embedded and indexed in Qdrant. This is the primary RAG knowledge base.
+
+2. **External API:** Tavily Search for writing craft queries (e.g., Story Grid theory) and external character/work references not in the author's material.
+
+3. **Interaction:** The supervisor classifies intent and calls the Retrieval Tool first. Tavily is called conditionally when external references are detected or when the query falls outside the author's uploaded material. See [ARCHITECTURE.md — Option A vs Option B at Query Time](./docs/ARCHITECTURE.md#option-a-vs-option-b-at-query-time).
 
 ---
 
 ### User questions (cross-check)
 
-<!-- List the specific questions your target user is likely to ask of this application. These should inform both your data collection and your evaluation set in Task 5. -->
+See [PRODUCT.md — Evaluation Questions](./docs/PRODUCT.md#evaluation-questions--input-output-pairs) for the full set. Sample questions:
 
-| # | Question |
-|---|----------|
-| 1 | |
-| 2 | |
-| 3 | |
-| 4 | |
-| 5 | |
+| #   | Question                                                                                                                  |
+| --- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1   | "If PurpleFrog had to choose between reaching her brother and following OchraMags's evacuation order, what would she do?" |
+| 2   | "How does PurpleFrog feel about the Underground?"                                                                         |
+| 3   | "What is SnowRaven's greatest flaw as a character so far?"                                                                |
+| 4   | "Describe the colony's classroom setting."                                                                                |
+| 5   | "What would be a strong Inciting Incident for a sequel scene?"                                                            |
 
 ---
 
@@ -107,7 +104,7 @@ Cover all three of the following:
 <!-- Describe your running prototype and link to the relevant code -->
 
 - **Code location:** [link or path]
-- **How to run locally:** 
+- **How to run locally:**
 
 ```bash
 # Add setup / run instructions here
@@ -136,12 +133,12 @@ Cover all three of the following:
 
 <!-- Provide your RAGAS results table. Include faithfulness, context precision, context recall, and any additional metrics -->
 
-| Metric | Score |
-|--------|-------|
-| Faithfulness | |
-| Context Precision | |
-| Context Recall | |
-| *(add others)* | |
+| Metric            | Score |
+| ----------------- | ----- |
+| Faithfulness      |       |
+| Context Precision |       |
+| Context Recall    |       |
+| _(add others)_    |       |
 
 ---
 
@@ -171,12 +168,12 @@ Cover all three of the following:
 
 <!-- Provide a side-by-side comparison of baseline vs. upgraded retriever -->
 
-| Metric | Baseline | Upgraded Retriever | Delta |
-|--------|----------|--------------------|-------|
-| Faithfulness | | | |
-| Context Precision | | | |
-| Context Recall | | | |
-| *(add others)* | | | |
+| Metric            | Baseline | Upgraded Retriever | Delta |
+| ----------------- | -------- | ------------------ | ----- |
+| Faithfulness      |          |                    |       |
+| Context Precision |          |                    |       |
+| Context Recall    |          |                    |       |
+| _(add others)_    |          |                    |       |
 
 <!-- Summarize your conclusions from this comparison -->
 
@@ -192,8 +189,8 @@ Cover all three of the following:
 
 ## 📎 Additional Links
 
-| Asset | Link |
-|-------|------|
-| GitHub Repo | |
-| Loom Demo Video (≤ 5 min) | |
-| This document | |
+| Asset                     | Link |
+| ------------------------- | ---- |
+| GitHub Repo               |      |
+| Loom Demo Video (≤ 5 min) |      |
+| This document             |      |
