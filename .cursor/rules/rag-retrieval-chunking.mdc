@@ -1,0 +1,98 @@
+---
+description: RAG retrieval methods and document chunking best practices
+globs: srv/**/*.py
+alwaysApply: false
+---
+
+# RAG Retrieval & Chunking Best Practices
+
+## Chunking — Default to Recursive Character Splitting
+
+Use `RecursiveCharacterTextSplitter` for ~80% of cases. Customize separators for the document type.
+
+```python
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=200,   # keep 10-20% overlap
+    separators=["\n\n", "\n", ". ", " ", ""],
+)
+chunks = splitter.split_documents(documents)  # preserves metadata
+```
+
+| Use Case        | chunk_size | overlap |
+| --------------- | ---------- | ------- |
+| Q&A (precision) | 500–800    | 15–20%  |
+| Summarization   | 1200–2000  | 10–15%  |
+| General         | 1000       | 200     |
+
+Always use `split_documents()` (not `split_text()`) to preserve source metadata.
+
+## Chunking — When to Use Other Methods
+
+- **Token-based** — when you must guarantee context-window fit: `RecursiveCharacterTextSplitter.from_tiktoken_encoder()`
+- **Semantic** — when quality is critical and compute cost is acceptable: `SemanticChunker`
+- **Structure-aware** — Markdown → `MarkdownHeaderTextSplitter`, code → `Language`-specific splitter
+- **Parent Document** — when you need precise retrieval + full context for generation
+
+## Retrieval Method Selection
+
+```
+Simple Q&A          → Dense vector search (cosine, k=5)
+Keyword-heavy       → Hybrid: BM25 + vector (weights: 0.4 / 0.6)
+Ambiguous queries   → MultiQueryRetriever
+Structured metadata → SelfQueryRetriever
+Production system   → Hybrid + Reranking (Cohere or cross-encoder)
+```
+
+## Hybrid Retrieval (Production Default)
+
+```python
+from langchain.retrievers import EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
+
+bm25 = BM25Retriever.from_documents(chunks, k=10)
+vector = vectorstore.as_retriever(search_kwargs={"k": 10})
+
+retriever = EnsembleRetriever(
+    retrievers=[bm25, vector],
+    weights=[0.4, 0.6],
+)
+```
+
+## Always Include Source Citations in RAG Tools
+
+```python
+# ❌ BAD — no way to verify sources
+return "\n".join(doc.page_content for doc in results)
+
+# ✅ GOOD — LLM can cite, users can verify
+formatted = []
+for i, doc in enumerate(results, 1):
+    source = doc.metadata.get("source", "Unknown")
+    formatted.append(f"[{i}] {doc.page_content}\n   Source: {source}")
+return "\n\n".join(formatted)
+```
+
+## Reranking Pipeline (High-Stakes Retrieval)
+
+```python
+from langchain.retrievers import ContextualCompressionRetriever
+from langchain.retrievers.document_compressors import CohereRerank
+
+reranker = CohereRerank(model="rerank-english-v3.0", top_n=5)
+final_retriever = ContextualCompressionRetriever(
+    base_compressor=reranker,
+    base_retriever=ensemble_retriever,  # fetch k=20, rerank to 5
+)
+```
+
+## Retrieval Quality Checklist
+
+- [ ] Chunk size validated against sample documents
+- [ ] Source metadata preserved through splitting
+- [ ] Overlap set to 10–20% of chunk size
+- [ ] Tested with queries requiring NO retrieval (agent should answer directly)
+- [ ] Tested with multi-retrieval queries
+- [ ] Fallback defined when no documents found

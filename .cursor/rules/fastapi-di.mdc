@@ -1,0 +1,120 @@
+---
+description: FastAPI + dependency-injector architecture patterns
+globs: srv/**/*.py
+alwaysApply: false
+---
+
+# FastAPI Dependency Injection Architecture
+
+## Package-Level Settings Ownership
+
+Each package owns its config via Pydantic Settings with an env prefix:
+
+```python
+# srv/acmestore/config.py
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+
+class AcmeStoreSettings(BaseSettings):
+    base_url: str
+    api_key: str
+    timeout: float = 30.0
+
+    class Config:
+        env_prefix = "ACMESTORE_"
+        env_file = ".env"
+
+@lru_cache
+def get_acmestore_settings() -> AcmeStoreSettings:
+    return AcmeStoreSettings()
+```
+
+## Singleton vs Factory
+
+| Use                           | Pattern               | Examples                                    |
+| ----------------------------- | --------------------- | ------------------------------------------- |
+| Expensive shared resources    | `providers.Singleton` | HTTP clients, LLMs, DB pools, vector stores |
+| Per-request stateless objects | `providers.Factory`   | Agents, services, request handlers          |
+
+```python
+class AppContainer(containers.DeclarativeContainer):
+    # Singleton — one shared instance
+    llm = providers.Singleton(ChatOpenAI, model="gpt-4o-mini", temperature=0)
+    acmestore_client = providers.Singleton(AcmeStoreClient, base_url=..., api_key=...)
+
+    # Factory — new instance per request
+    element_selection_agent = providers.Factory(ElementSelectionAgent, llm=llm, client=acmestore_client)
+    interaction_service = providers.Factory(InteractionService, agent=element_selection_agent, client=acmestore_client)
+```
+
+## Constructor Injection — No Global State
+
+All dependencies must be explicit constructor arguments:
+
+```python
+# ❌ BAD — hidden global dependency
+class MyService:
+    def __init__(self):
+        self.client = get_acmestore_client()   # hidden, untestable
+
+# ✅ GOOD — explicit, testable
+class MyService:
+    def __init__(self, client: AcmeStoreClient, agent: ElementSelectionAgent):
+        self.client = client
+        self.agent = agent
+```
+
+## FastAPI Route Wiring
+
+```python
+from dependency_injector.wiring import inject, Provide
+
+router = APIRouter()
+
+@router.post("/elements")
+@inject
+async def create_element(
+    request: ElementRequest,
+    service: InteractionService = Depends(Provide[AppContainer.interaction_service]),
+):
+    return await service.create(request)
+```
+
+Wire the container to specific route modules only:
+
+```python
+wiring_config = containers.WiringConfiguration(
+    modules=["api.routes.elements", "api.routes.dashboards"]  # explicit, not broad packages
+)
+```
+
+## Application Lifespan — Clean Async Resource Management
+
+```python
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    client = app.container.acmestore_client()
+    await client.initialize()   # startup
+    yield
+    await client.close()        # shutdown — always clean up
+
+app = FastAPI(lifespan=lifespan)
+app.container = AppContainer()
+```
+
+## Testing — Override Dependencies, Don't Bypass the Container
+
+```python
+# ✅ GOOD — override specific providers for tests
+with container.acmestore_client.override(mock_client):
+    service = container.interaction_service()
+    result = await service.create(request)
+    mock_client.create_element.assert_called_once()
+
+# ❌ BAD — manual construction bypasses DI benefits
+service = InteractionService(agent=mock_agent, client=mock_client)
+```
+
+Use a `TestContainer` that inherits from the production container and overrides only external dependencies.

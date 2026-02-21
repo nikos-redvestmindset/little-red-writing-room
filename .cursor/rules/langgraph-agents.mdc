@@ -1,0 +1,111 @@
+---
+description: LangGraph agent architecture and AgentBuilder patterns
+globs: srv/**/*.py
+alwaysApply: false
+---
+
+# LangGraph Agent Best Practices
+
+## When to Use Agents vs Chains
+
+```python
+# ❌ Don't use agents for deterministic, single-step tasks
+agent = create_react_agent(llm, [format_date_tool])
+
+# ✅ Use a simple chain or pure Python instead
+formatted = datetime.now().strftime("%Y-%m-%d")
+```
+
+Use agents only when you need dynamic tool selection or multi-step reasoning. Use chains for fixed, predictable flows.
+
+## Always Use AgentBuilder
+
+All agents must extend `AgentBuilder`. Implement `_build()`, consumers call `compile()`.
+
+```python
+from agents.base import AgentBuilder
+from langgraph.graph.state import CompiledStateGraph
+
+class MyAgent(AgentBuilder):
+    def __init__(self, llm, tools):
+        self.llm = llm
+        self.tools = tools
+
+    def _build(self) -> CompiledStateGraph:
+        return create_react_agent(
+            model=self.llm,
+            tools=self.tools,
+            state_modifier=SYSTEM_PROMPT,
+        )
+
+# Consumers:
+agent = MyAgent(llm, tools)
+graph = agent.compile()   # cached, non-overridable
+result = await graph.ainvoke({"messages": [...]})
+```
+
+## State Design
+
+Use separate, focused TypedDicts per sub-agent. Never share a monolithic state across unrelated stages.
+
+```python
+class SelectionState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+    query: str
+    result: MySchema | None
+
+class RefinementState(TypedDict):  # separate — not the same as SelectionState
+    messages: Annotated[list[AnyMessage], add_messages]
+    selection_result: MySchema | None
+```
+
+For multi-stage parent graphs use `input=`/`output=` to hide bridge fields:
+
+```python
+graph = StateGraph(
+    InternalState,        # full state with bridge fields
+    input=InputSchema,    # what callers provide
+    output=OutputSchema,  # what callers receive
+)
+```
+
+## Sub-Agent "Invoke from a Node" Pattern
+
+Each parent node transforms state → sub-agent state, invokes, maps back:
+
+```python
+async def _run_selection(self, state: ParentState, config: RunnableConfig) -> dict:
+    agent = self._create_selection_agent()
+    result = await agent.ainvoke(
+        {"messages": state["messages"], "query": state["query"]},
+        config=config,   # propagates AgentContext automatically
+    )
+    return {"selection_result": result["structured_response"]}
+```
+
+## Tool Docstrings Are Critical
+
+The docstring is the LLM's "instruction manual". Always specify when to use and when NOT to use.
+
+```python
+# ❌ BAD
+@tool
+def search(query: str) -> str:
+    """Search."""
+
+# ✅ GOOD
+@tool
+def search_product_docs(query: str) -> str:
+    """
+    Search product documentation for features and specs.
+    Use for questions about our product. NOT for general knowledge or pricing.
+    Always cite the source in your response.
+    """
+```
+
+## Production Guards
+
+- Always set `max_iterations` to prevent infinite loops
+- Use `temperature=0` for tool-calling LLMs
+- Always include source metadata in RAG tool results
+- Use `PostgresSaver` for multi-server deployments, `SqliteSaver` for single-server

@@ -34,3 +34,24 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+.eggs/
+dist/
+*.so
+.venv/
+venv/
+env/
+
+# fastapi / uvicorn
+*.pid
+
+# jupyter notebooks
+.ipynb_checkpoints/
+*.ipynb
