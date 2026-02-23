@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Avatar, Message } from "@/types";
+import type { Character, Message } from "@/types";
 import { AvatarSelector } from "@/components/avatar-selector";
 import { ChatArea } from "@/components/chat-area";
 
 export default function NewChatPage() {
   const router = useRouter();
-  const [selectedAvatar, setSelectedAvatar] = useState<Avatar | null>(null);
+  const [selectedAvatar, setSelectedAvatar] = useState<Character | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
 
   function handleSend(content: string) {

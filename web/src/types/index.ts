@@ -6,6 +6,22 @@ export interface Avatar {
   color: string;
 }
 
+export interface Character {
+  id: string;
+  name: string;
+  initials: string;
+  color: string;
+}
+
+export interface UploadedFile {
+  id: string;
+  name: string;
+  size: number;
+  uploadedAt: string;
+  knowledgeExtracted: boolean;
+  extractionEntities: string[];
+}
+
 export interface Message {
   id: string;
   threadId: string;
