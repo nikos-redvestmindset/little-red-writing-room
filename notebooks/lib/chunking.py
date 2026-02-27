@@ -69,3 +69,35 @@ def apply_semantic_overlap(
         )
 
     return result
+
+
+def prepend_metadata_title(chunks: list[Document]) -> list[Document]:
+    """Prepend a compact taxonomy title line to each enriched chunk's text.
+
+    The title is derived from the classification metadata attached by
+    ``classify_chunks`` and takes the form::
+
+        [content_type | narrative_function | characters: Name1, Name2 | story_grid_tag]
+
+    ``story_grid_tag`` is omitted when its value is ``"none"``.  The title is
+    baked into ``page_content`` before embedding so that dense similarity search
+    naturally rewards chunks whose taxonomy matches the query's intent.
+
+    Original metadata is preserved unchanged on the returned Documents.
+    """
+    result: list[Document] = []
+    for chunk in chunks:
+        m = chunk.metadata
+        chars = ", ".join(m.get("characters_present") or []) or "none"
+        parts = [
+            m.get("content_type", ""),
+            m.get("narrative_function", ""),
+            f"characters: {chars}",
+        ]
+        tag = m.get("story_grid_tag", "none")
+        if tag and tag != "none":
+            parts.append(tag)
+        title = "[" + " | ".join(p for p in parts if p) + "]"
+        new_content = title + "\n\n" + chunk.page_content
+        result.append(Document(page_content=new_content, metadata=chunk.metadata))
+    return result

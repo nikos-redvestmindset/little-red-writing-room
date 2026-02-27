@@ -131,20 +131,21 @@ See [PRODUCT.md — Evaluation Questions](./docs/PRODUCT.md#evaluation-questions
 
 ### Deliverable 1 — RAGAS evaluation results
 
-<!-- Provide your RAGAS results table. Include faithfulness, context precision, context recall, and any additional metrics -->
+See [notebooks/rag_evaluation.ipynb](./notebooks/rag_evaluation.ipynb) Section 5 for the full run.
 
-| Metric            | Score |
-| ----------------- | ----- |
-| Faithfulness      |       |
-| Context Precision |       |
-| Context Recall    |       |
-| _(add others)_    |       |
+| Metric                | Score  |
+| --------------------- | ------ |
+| Faithfulness          | 0.6647 |
+| Context Recall        | 0.3636 |
+| Factual Correctness   | 0.6744 |
+| Answer Relevancy      | 0.8533 |
+| Context Entity Recall | 0.4583 |
 
 ---
 
 ### Deliverable 2 — Conclusions from baseline evaluation
 
-<!-- What does the baseline tell you about the performance and effectiveness of your pipeline? -->
+Context recall (0.36) and faithfulness (0.66) are the clearest weak spots. Fixed 500-char chunks frequently lack character names because mid-scene passages rely on pronouns or implicit references, so character-focused dense similarity queries fail to surface the right chunks and the LLM is left with incomplete context. Answer relevancy (0.85) and factual correctness (0.67) are adequate but have room to grow. See [notebooks/rag_evaluation.ipynb](./notebooks/rag_evaluation.ipynb) Section 6 for the full analysis.
 
 ---
 
@@ -152,30 +153,29 @@ See [PRODUCT.md — Evaluation Questions](./docs/PRODUCT.md#evaluation-questions
 
 ### Deliverable 1 — Chosen advanced retrieval technique and rationale (1–2 sentences)
 
-<!-- Name the technique and explain why you believe it will improve retrieval for your use case -->
+`SemanticChunker` (percentile breakpoint) with 3-sentence content overlap, an LLM taxonomy classification pass, and a metadata title prepended to each chunk's text before embedding — e.g. `[dialogue | plot_event | characters: PurpleFrog, OchraMags]`. Baking the taxonomy into `page_content` means character names and narrative tags are present in the embedding even for mid-scene chunks that only use pronouns in the original prose, directly targeting the baseline's context recall and faithfulness weaknesses.
 
 ---
 
 ### Deliverable 2 — Implementation
 
-<!-- Describe the implementation and link to the relevant code -->
-
-- **Code location:** [link or path]
+- **Code location:** [notebooks/rag_evaluation.ipynb](./notebooks/rag_evaluation.ipynb) Section 4 (Option B pipeline); supporting modules [`notebooks/lib/chunking.py`](./notebooks/lib/chunking.py) (semantic overlap + metadata title prepend) and [`notebooks/lib/classification.py`](./notebooks/lib/classification.py) (taxonomy classification)
 
 ---
 
 ### Deliverable 3 — Performance comparison (RAGAS results)
 
-<!-- Provide a side-by-side comparison of baseline vs. upgraded retriever -->
+See [notebooks/rag_evaluation.ipynb](./notebooks/rag_evaluation.ipynb) Section 6 for the full analysis including LangSmith cost and latency data.
 
-| Metric            | Baseline | Upgraded Retriever | Delta |
-| ----------------- | -------- | ------------------ | ----- |
-| Faithfulness      |          |                    |       |
-| Context Precision |          |                    |       |
-| Context Recall    |          |                    |       |
-| _(add others)_    |          |                    |       |
+| Metric                | Baseline (Option A) | Upgraded (Option B) | Delta  |
+| --------------------- | ------------------- | ------------------- | ------ |
+| Faithfulness          | 0.6647              | 0.9474              | +0.282 |
+| Context Recall        | 0.3636              | 0.8833              | +0.519 |
+| Factual Correctness   | 0.6744              | 0.6867              | +0.013 |
+| Answer Relevancy      | 0.8533              | 0.9277              | +0.075 |
+| Context Entity Recall | 0.4583              | 0.5514              | +0.093 |
 
-<!-- Summarize your conclusions from this comparison -->
+Option B wins on every metric. Context recall nearly triples (+142.6%) and faithfulness jumps to 0.95 (+42.4%) — the two areas where the baseline was weakest. Prepending the taxonomy title (with resolved character names) to each chunk's text before embedding means character names are present in the embedding even for mid-scene chunks that rely on pronouns in the original prose, making them retrievable for character-focused queries. Entity recall also improves meaningfully (+20.3%). The token and cost overhead roughly doubles (tokens +196%, cost +112%) with only modest latency impact (+13.6%), a trade-off well justified by the quality gains.
 
 ---
 
