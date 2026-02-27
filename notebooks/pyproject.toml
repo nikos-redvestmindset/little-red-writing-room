@@ -1,0 +1,28 @@
+[project]
+name = "lrwr-notebooks"
+version = "0.1.0"
+description = "Evaluation notebooks for Little Red Writing Room RAG pipelines"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain",
+    "langchain-openai",
+    "langchain-qdrant",
+    "langchain-cohere",
+    "langchain-community",
+    "langchain-experimental",
+    "qdrant-client",
+    "ragas==0.2.10",
+    "python-dotenv",
+    "pandas",
+    "ipykernel",
+    "rapidfuzz>=3.14.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "jupyter",
+    "jupyterlab",
+]
+
+[tool.uv]
+package = false
