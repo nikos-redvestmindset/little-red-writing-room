@@ -7,48 +7,65 @@ default:
 
 # ── setup ────────────────────────────────────────────────────────────────────
 
-# install all dependencies (web + srv)
-setup: setup-web setup-srv
+# install all dependencies (web + srv + notebooks)
+setup: setup-web setup-srv setup-notebooks
 
 # install Next.js dependencies
 setup-web:
-    cd web && npm install
+    cd web && pnpm install
 
-# create a Python virtual-env and install FastAPI dependencies
+# sync srv dependencies via uv
 setup-srv:
-    cd srv && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+    cd srv && uv sync --extra dev
 
 # ── web (Next.js) ────────────────────────────────────────────────────────────
 
 # start the Next.js dev server
 dev-web:
-    cd web && npm run dev
+    cd web && pnpm dev --port 3003
 
 # build the Next.js production bundle
 build-web:
-    cd web && npm run build
+    cd web && pnpm build
 
 # run Next.js tests
 test-web:
-    cd web && npm test
+    cd web && pnpm test
 
 # lint the Next.js app
 lint-web:
-    cd web && npm run lint
+    cd web && pnpm lint
 
 # ── srv (FastAPI) ─────────────────────────────────────────────────────────────
 
 # start the FastAPI dev server (reload on file changes)
 dev-srv:
-    cd srv && .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+    cd srv && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8008
 
 # run FastAPI tests
 test-srv:
-    cd srv && .venv/bin/pytest
+    cd srv && uv run pytest
 
 # lint the FastAPI app
 lint-srv:
-    cd srv && .venv/bin/ruff check .
+    cd srv && uv run ruff check .
+
+# ── database ──────────────────────────────────────────────────────────────────
+
+# apply pending Supabase migrations
+migrate:
+    cd srv && uv run python -m scripts.migrate
+
+# ── notebooks ────────────────────────────────────────────────────────────────
+
+# sync notebooks venv and install dependencies
+setup-notebooks:
+    cd notebooks && uv sync --extra dev
+    cd notebooks && uv run python -m ipykernel install --user --name lrwr-notebooks --display-name "LRWR Notebooks"
+
+# launch Jupyter Lab for notebooks
+run-notebook:
+    cd notebooks && uv run jupyter lab
 
 # ── combined ─────────────────────────────────────────────────────────────────
 

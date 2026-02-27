@@ -19,7 +19,7 @@ Supabase serves three roles: **Auth** for user sessions, **Postgres** for relati
 **Observability & Eval — LangSmith + RAGAS**
 LangSmith receives traces from every agent run, providing visibility into retrieval chains, tool calls, and response generation. RAGAS evaluates retrieval quality using faithfulness, context precision, and context recall metrics against a synthetic golden dataset, with results fed into LangSmith for tracking over time.
 
-```mermaid 
+```mermaid
 graph TB
     %% ── User & Frontend ──
     User([fa:fa-user Writer / Author])
@@ -108,7 +108,9 @@ graph TB
     class LS,RAGAS obs
     class Tavily external
 ```
+
 # Agents & RAG Architecture
+
 # Little Red Writing Room — System Architecture
 
 This document covers the two core architectural sections of the system: the **Data Processing Pipeline** (document ingestion and knowledge extraction) and the **User Request Path** (SSE-based chat with avatar agents). These two sections are intentionally decoupled — the pipeline writes to the knowledge store, the request path reads from it, and they share no runtime dependencies beyond the store itself.
@@ -185,13 +187,17 @@ parse → semantic_chunk → classify → extract_metadata → embed_with_payloa
 **Stage 1 — Parse**
 Same as Option A.
 
-**Stage 2 — Semantic Chunking**
-LangChain `SemanticChunker` splits on embedding similarity rather than character boundaries. Dialogue exchanges, action sequences, and worldbuilding descriptions each remain coherent as units. This is the foundation that makes the classification pass meaningful — semantically coherent chunks produce more reliable taxonomy tags.
+**Stage 2 — Semantic Chunking with Overlap**
+LangChain `SemanticChunker` splits on embedding similarity rather than character boundaries. Dialogue exchanges, action sequences, and worldbuilding descriptions each remain coherent as units. A configurable overlap window is preserved between adjacent chunks: a sliding set of sentences from the end of each chunk is prepended to the start of the next. This overlap creates continuity anchors so that scene transitions, pronoun chains, and cross-sentence character references are not severed at a chunk boundary. The result is that Stage 3's classification call has enough surrounding context to reliably tag `narrative_function`, `characters_present`, and `story_grid_tag` — particularly for chunks that fall mid-scene or mid-dialogue where isolated text would be ambiguous without the bridging context.
 
 **Stage 3 — Classification Pass (per chunk)**
-LLM call with Pydantic structured output against each chunk:
+LLM call with Pydantic structured output against each chunk. The call receives two inputs: the chunk text (with its overlap prefix intact) and `known_characters` — the list of character names identified from the document during parsing or from previously extracted profiles. `known_characters` is injected into the system prompt rather than included in the output schema; it anchors name resolution so that ambiguous pronouns and aliases are mapped to canonical names before `characters_present` is populated, reducing cross-chunk inconsistency.
 
 ```python
+# Call-time inputs (injected into system prompt, not output fields):
+#   chunk_text: str          — the chunk content including overlap prefix
+#   known_characters: list[str]  — canonical character names from the document
+
 class ChunkClassification(BaseModel):
     content_type: Literal[
         "dialogue", "action_reaction",
@@ -201,7 +207,7 @@ class ChunkClassification(BaseModel):
         "worldbuilding", "character_reveal",
         "plot_event", "backstory", "thematic"
     ]
-    characters_present: list[str]
+    characters_present: list[str]    # resolved against known_characters
     story_grid_tag: Literal[
         "inciting_incident", "turning_point",
         "crisis", "climax", "resolution", "none"
@@ -272,17 +278,17 @@ Hybrid retrieval combining dense vector similarity with Qdrant metadata filterin
 
 ### Pipeline Comparison
 
-| | Option A (Baseline) | Option B (Advanced) |
-|---|---|---|
-| Chunking | RecursiveCharacterTextSplitter | SemanticChunker |
-| LLM calls during ingestion | None | 2 passes (classify + extract) |
-| Qdrant payload | Minimal | Full taxonomy tags |
-| Supabase records | Job record only | CharacterProfile, WorldElement, NarrativeEvent |
-| Retrieval | Dense vector + Cohere rerank | Dense vector + taxonomy filters + Cohere rerank |
-| Gap detection | Not available | Native via `open_gaps` + `implied_gaps` |
-| Tavily trigger | Supervisor heuristic only | Supervisor + `external_references` field |
-| Context packet quality | Ranked chunks only | Ranked chunks + structured profile + gaps |
-| Rubric mapping | Task 5 baseline | Task 6 upgrade |
+|                            | Option A (Baseline)            | Option B (Advanced)                             |
+| -------------------------- | ------------------------------ | ----------------------------------------------- |
+| Chunking                   | RecursiveCharacterTextSplitter | SemanticChunker with chunk overlap              |
+| LLM calls during ingestion | None                           | 2 passes (classify + extract)                   |
+| Qdrant payload             | Minimal                        | Full taxonomy tags                              |
+| Supabase records           | Job record only                | CharacterProfile, WorldElement, NarrativeEvent  |
+| Retrieval                  | Dense vector + Cohere rerank   | Dense vector + taxonomy filters + Cohere rerank |
+| Gap detection              | Not available                  | Native via `open_gaps` + `implied_gaps`         |
+| Tavily trigger             | Supervisor heuristic only      | Supervisor + `external_references` field        |
+| Context packet quality     | Ranked chunks only             | Ranked chunks + structured profile + gaps       |
+| Rubric mapping             | Task 5 baseline                | Task 6 upgrade                                  |
 
 ---
 
@@ -391,6 +397,7 @@ flowchart TD
 The central orchestrator. Receives the fully assembled input bundle from the `AvatarSessionService` — user message, conversation history, narrative state, and character registry — and coordinates all downstream calls step by step.
 
 Responsibilities:
+
 - Classify intent: `analytical | in_character | gap_probe | external_reference | scenario`
 - Resolve which characters are relevant to the query
 - Call the Retrieval tool with appropriate filters
@@ -414,7 +421,7 @@ The `AvatarSessionService` receives this bundle and decides what to persist. The
 
 ---
 
-#### Retrieval Tool *(LangChain tool)*
+#### Retrieval Tool _(LangChain tool)_
 
 Called directly by the supervisor as a standard LangChain tool. Executes the full retrieval pipeline and returns a ranked context packet to the supervisor.
 
@@ -427,6 +434,7 @@ Candidate chunks passed to Cohere Rerank API (`rerank-english-v3.0`) with the or
 Cohere reranking runs in both pipeline options. The benefit is larger with Option B because taxonomy-filtered candidates are already more relevant before reranking, giving Cohere better material to work with.
 
 **Tool return value:**
+
 ```python
 class RetrievalResult(BaseModel):
     character_profiles: list[CharacterProfile]  # Option B only, pre-fetched by service
@@ -436,7 +444,7 @@ class RetrievalResult(BaseModel):
 
 ---
 
-#### Tavily Tool *(LangChain tool, conditional)*
+#### Tavily Tool _(LangChain tool, conditional)_
 
 Called by the supervisor when it detects a reference to a named character or work not originating in the author's uploaded material — either from the query itself or, in Option B, from the `external_references` field populated at ingestion.
 
@@ -444,7 +452,7 @@ Executes web searches via LangChain's Tavily integration and returns summarized 
 
 ---
 
-#### Gap Detection Agent *(conditional)*
+#### Gap Detection Agent _(conditional)_
 
 Delegated to by the supervisor when the Retrieval tool returns `low_confidence: True`, or when `implied_gaps` in retrieved chunk payloads are relevant to the query (Option B only).
 
@@ -496,14 +504,14 @@ AvatarSessionService
 
 ### Option A vs Option B at Query Time
 
-| | Option A | Option B |
-|---|---|---|
-| Structured profile injection | None | CharacterProfile from Supabase |
-| Retrieval tool — Qdrant query | Dense vector only | Dense vector + taxonomy filters |
-| Retrieval tool — Cohere rerank | Applied to raw candidates | Applied to pre-filtered candidates |
-| Gap detection agent | Not available | Native via `open_gaps` + `implied_gaps` |
-| Tavily tool trigger | Supervisor heuristic only | Supervisor + `external_references` field |
-| Context quality passed to Avatar | Ranked chunks only | Ranked chunks + structured profile + gaps |
+|                                  | Option A                  | Option B                                  |
+| -------------------------------- | ------------------------- | ----------------------------------------- |
+| Structured profile injection     | None                      | CharacterProfile from Supabase            |
+| Retrieval tool — Qdrant query    | Dense vector only         | Dense vector + taxonomy filters           |
+| Retrieval tool — Cohere rerank   | Applied to raw candidates | Applied to pre-filtered candidates        |
+| Gap detection agent              | Not available             | Native via `open_gaps` + `implied_gaps`   |
+| Tavily tool trigger              | Supervisor heuristic only | Supervisor + `external_references` field  |
+| Context quality passed to Avatar | Ranked chunks only        | Ranked chunks + structured profile + gaps |
 
 ---
 
@@ -514,7 +522,7 @@ The same test question set runs against both pipeline options. Cohere reranking 
 Key metrics to watch:
 
 - **Context precision** — Option B's taxonomy filtering should improve this significantly by reducing irrelevant chunks before Cohere sees them
-- **Context recall** — semantic chunking should improve this by keeping related content coherent rather than split across chunk boundaries
+- **Context recall** — semantic chunking keeps related content coherent rather than split across chunk boundaries; chunk overlap ensures that cross-boundary evidence is preserved in adjacent chunks, reducing the chance of a relevant sentence being inaccessible at retrieval time
 - **Faithfulness** — structured profile injection gives the avatar agent authoritative grounding, reducing hallucination into undefined character attributes
 
 Both options are implemented behind a feature flag — same pipeline entry point, different processing path selected by a config setting — so RAGAS evaluation is a clean A/B comparison against identical test questions.

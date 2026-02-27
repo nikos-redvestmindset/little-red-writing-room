@@ -22,6 +22,11 @@ export interface UploadedFile {
   extractionEntities: string[];
 }
 
+export interface GapFlag {
+  attribute: string;
+  suggestion: string;
+}
+
 export interface Message {
   id: string;
   threadId: string;
@@ -29,6 +34,7 @@ export interface Message {
   content: string;
   avatarId?: string;
   citations?: Citation[];
+  gapFlags?: GapFlag[];
   createdAt: string;
 }
 

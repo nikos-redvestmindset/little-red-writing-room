@@ -9,9 +9,15 @@ interface ChatAreaProps {
   messages: Message[];
   onSend: (message: string) => void;
   avatarName?: string;
+  disabled?: boolean;
 }
 
-export function ChatArea({ messages, onSend, avatarName }: ChatAreaProps) {
+export function ChatArea({
+  messages,
+  onSend,
+  avatarName,
+  disabled,
+}: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,7 +42,7 @@ export function ChatArea({ messages, onSend, avatarName }: ChatAreaProps) {
 
       <div className="shrink-0 border-t bg-background p-4">
         <div className="max-w-3xl mx-auto">
-          <ChatInput onSend={onSend} />
+          <ChatInput onSend={onSend} disabled={disabled} />
         </div>
       </div>
     </div>

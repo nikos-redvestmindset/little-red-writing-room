@@ -54,4 +54,3 @@ env/
 
 # jupyter notebooks
 .ipynb_checkpoints/
-*.ipynb

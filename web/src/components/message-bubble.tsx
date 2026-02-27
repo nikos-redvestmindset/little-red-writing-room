@@ -60,6 +60,20 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             ))}
           </div>
         )}
+
+        {message.gapFlags && message.gapFlags.length > 0 && (
+          <div className="space-y-1 px-1">
+            {message.gapFlags.map((gap, i) => (
+              <div
+                key={i}
+                className="text-xs text-amber-700 dark:text-amber-400 border-l-2 border-amber-400/50 pl-3 py-1"
+              >
+                <span className="font-medium">Gap: {gap.attribute}</span>
+                <span className="block mt-0.5">{gap.suggestion}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,0 +1,6 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/notebooks/.venv/bin/python",
+  "jupyter.notebookFileRoot": "${workspaceFolder}/notebooks",
+  "python.analysis.venvPath": "${workspaceFolder}/notebooks",
+  "python.venvPath": "${workspaceFolder}/notebooks"
+}

@@ -1,38 +1,119 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useCallback, useRef } from "react";
 import type { Character, Message } from "@/types";
 import { AvatarSelector } from "@/components/avatar-selector";
 import { ChatArea } from "@/components/chat-area";
+import { createChat, streamCharacterChat } from "@/lib/api";
 
 export default function NewChatPage() {
-  const router = useRouter();
   const [selectedAvatar, setSelectedAvatar] = useState<Character | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const chatIdRef = useRef<string | null>(null);
 
-  function handleSend(content: string) {
-    if (!selectedAvatar) return;
+  const handleSend = useCallback(
+    async (content: string) => {
+      if (!selectedAvatar || isStreaming) return;
 
-    const userMsg: Message = {
-      id: `msg-${Date.now()}`,
-      threadId: "new",
-      role: "user",
-      content,
-      createdAt: new Date().toISOString(),
-    };
+      if (!chatIdRef.current) {
+        const newChatId = crypto.randomUUID();
+        chatIdRef.current = newChatId;
+        try {
+          await createChat(newChatId, selectedAvatar.id);
+        } catch (err) {
+          console.error("Failed to create chat:", err);
+          chatIdRef.current = null;
+          return;
+        }
+      }
 
-    const aiMsg: Message = {
-      id: `msg-${Date.now() + 1}`,
-      threadId: "new",
-      role: "assistant",
-      content: `*${selectedAvatar.name} considers your question carefully...*\n\nThis is a placeholder response. Once the backend is connected, ${selectedAvatar.name} will respond in-character, grounded in your uploaded story documents.`,
-      avatarId: selectedAvatar.id,
-      createdAt: new Date().toISOString(),
-    };
+      const userMsg: Message = {
+        id: `msg-${Date.now()}`,
+        threadId: chatIdRef.current,
+        role: "user",
+        content,
+        createdAt: new Date().toISOString(),
+      };
 
-    setMessages((prev) => [...prev, userMsg, aiMsg]);
-  }
+      const assistantMsgId = `msg-${Date.now() + 1}`;
+      const assistantMsg: Message = {
+        id: assistantMsgId,
+        threadId: chatIdRef.current,
+        role: "assistant",
+        content: "",
+        avatarId: selectedAvatar.id,
+        citations: [],
+        gapFlags: [],
+        createdAt: new Date().toISOString(),
+      };
+
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
+      setIsStreaming(true);
+
+      try {
+        await streamCharacterChat(
+          {
+            chat_id: chatIdRef.current,
+            character_id: selectedAvatar.id,
+            message: content,
+          },
+          {
+            onToken: ({ text }) => {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? { ...m, content: m.content + text }
+                    : m
+                )
+              );
+            },
+            onCitation: (citation) => {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? {
+                        ...m,
+                        citations: [
+                          ...(m.citations ?? []),
+                          {
+                            sourceDocument: citation.source,
+                            quote: `[chunk ${citation.chunk_index}]`,
+                          },
+                        ],
+                      }
+                    : m
+                )
+              );
+            },
+            onGap: (gap) => {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? {
+                        ...m,
+                        gapFlags: [...(m.gapFlags ?? []), gap],
+                      }
+                    : m
+                )
+              );
+            },
+            onDone: () => {
+              setIsStreaming(false);
+            },
+            onError: (err) => {
+              console.error("Stream error:", err);
+              setIsStreaming(false);
+            },
+          }
+        );
+      } catch (err) {
+        console.error("Stream failed:", err);
+        setIsStreaming(false);
+      }
+    },
+    [selectedAvatar, isStreaming]
+  );
 
   if (!selectedAvatar) {
     return <AvatarSelector selectedId={null} onSelect={setSelectedAvatar} />;
@@ -43,6 +124,7 @@ export default function NewChatPage() {
       messages={messages}
       onSend={handleSend}
       avatarName={selectedAvatar.name}
+      disabled={isStreaming}
     />
   );
 }
