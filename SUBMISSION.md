@@ -101,20 +101,40 @@ See [PRODUCT.md — Evaluation Questions](./docs/PRODUCT.md#evaluation-questions
 
 ### Deliverable 1 — End-to-end prototype (local endpoint)
 
-<!-- Describe your running prototype and link to the relevant code -->
+Full setup and run instructions are in the [README](./README.md) (sections 1–8), including environment variables, migrations, and how to upload and extract the sample documents.
 
-- **Code location:** [link or path]
-- **How to run locally:**
+**Code locations:**
+
+| Layer              | Path             | GitHub                                                                                            |
+| ------------------ | ---------------- | ------------------------------------------------------------------------------------------------- |
+| Frontend (Next.js) | [`web/`](./web/) | [github.com/…/web](https://github.com/nikos-redvestmindset/little-red-writing-room/tree/main/web) |
+| Backend (FastAPI)  | [`srv/`](./srv/) | [github.com/…/srv](https://github.com/nikos-redvestmindset/little-red-writing-room/tree/main/srv) |
+
+**Quick start:**
 
 ```bash
-# Add setup / run instructions here
+# 1. Install all dependencies
+just setup
+
+# 2. Copy and fill in environment variables
+cp srv/.env.example srv/.env        # add OpenAI, Supabase, Qdrant, Cohere, Tavily keys
+# create web/.env.local             # add NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+# 3. Apply database migrations
+just migrate
+
+# 4. Start both servers
+just dev-srv   # FastAPI on :8008
+just dev-web   # Next.js on :3003
 ```
+
+Log in at [http://localhost:3003](http://localhost:3003) with `test@lrwr.ink` / `abc123`, then follow the README to create characters, upload the sample documents from `notebooks/sample_data/`, and run extraction before chatting.
 
 ---
 
 ### Deliverable 2 (Optional) — Locally-hosted OSS models
 
-<!-- If applicable, describe any OSS models used instead of OpenAI API models -->
+Not applicable — the prototype uses OpenAI GPT-4o for LLM inference and `text-embedding-3-small` for embeddings.
 
 ---
 
@@ -189,8 +209,8 @@ Option B wins on every metric. Context recall nearly triples (+142.6%) and faith
 
 ## 📎 Additional Links
 
-| Asset                     | Link |
-| ------------------------- | ---- |
-| GitHub Repo               |      |
-| Loom Demo Video (≤ 5 min) |      |
-| This document             |      |
+| Asset                     | Link                                                                                                                       |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| GitHub Repo               | [github.com/nikos-redvestmindset/little-red-writing-room](https://github.com/nikos-redvestmindset/little-red-writing-room) |
+| Loom Demo Video (≤ 5 min) |                                                                                                                            |
+| This document             | [SUBMISSION.md](https://github.com/nikos-redvestmindset/little-red-writing-room/blob/main/SUBMISSION.md)                   |
