@@ -114,6 +114,55 @@ export async function streamCharacterChat(
   }
 }
 
+// ── Character APIs ────────────────────────────────────────────────────────────
+
+export interface CharacterResponse {
+  id: string;
+  name: string;
+  initials: string;
+  color: string;
+  created_at: string;
+}
+
+export async function listCharacters(): Promise<CharacterResponse[]> {
+  const token = await getBearerToken();
+  const res = await fetch(`${apiUrl()}/characters`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Failed to list characters: HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function createCharacter(
+  name: string,
+  initials: string,
+  color: string
+): Promise<CharacterResponse> {
+  const token = await getBearerToken();
+  const res = await fetch(`${apiUrl()}/characters`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ name, initials, color }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to create character: HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteCharacterApi(characterId: string): Promise<void> {
+  const token = await getBearerToken();
+  const res = await fetch(`${apiUrl()}/characters/${characterId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok)
+    throw new Error(`Failed to delete character: HTTP ${res.status}`);
+}
+
 // ── Document APIs ─────────────────────────────────────────────────────────────
 
 export interface DocumentResponse {

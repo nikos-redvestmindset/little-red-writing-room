@@ -164,7 +164,10 @@ export function AppSidebar({ collapsed, onToggleCollapse }: AppSidebarProps) {
                     <span className="truncate font-medium text-xs">
                       {thread.title}
                     </span>
-                    <span className="text-[10px] text-muted-foreground shrink-0">
+                    <span
+                      className="text-[10px] text-muted-foreground shrink-0"
+                      suppressHydrationWarning
+                    >
                       {formatRelativeTime(thread.lastMessageAt)}
                     </span>
                   </div>

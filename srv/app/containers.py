@@ -1,5 +1,6 @@
 from dependency_injector import containers, providers
 from langchain_openai import OpenAIEmbeddings
+from langgraph.checkpoint.memory import MemorySaver
 from qdrant_client import QdrantClient
 
 from agents.avatar.agent import AvatarAgentBuilder
@@ -53,6 +54,7 @@ def _create_progress_notifier(
 class ApplicationContainer(containers.DeclarativeContainer):
     wiring_config = containers.WiringConfiguration(
         modules=[
+            "app.api.routes.characters",
             "app.api.routes.chat",
             "app.api.routes.chats",
             "app.api.routes.documents",
@@ -129,6 +131,9 @@ class ApplicationContainer(containers.DeclarativeContainer):
         settings=gap_detection_settings,
     )
 
+    # ── Memory (Singleton — swap to PostgresSaver for Supabase persistence) ─
+    checkpointer = providers.Singleton(MemorySaver)
+
     # ── Supervisor (Factory) — receives all tool and sub-agent builders ───
     supervisor_agent = providers.Factory(
         SupervisorAgentBuilder,
@@ -137,6 +142,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         tavily_tool_builder=tavily_tool_builder,
         avatar_agent_builder=avatar_agent_builder,
         gap_detection_builder=gap_detection_builder,
+        checkpointer=checkpointer,
     )
 
     # ── Session service (Factory) ─────────────────────────────────────────

@@ -56,12 +56,14 @@ describe("streamCharacterChat", () => {
     expect(tokens).toEqual(["Hello ", "world"]);
   });
 
-  it("calls onCitation for citation events", async () => {
-    const citations: { source: string; chunk_index: number }[] = [];
+  it("calls onCitation for citation events with chunk text", async () => {
+    const citations: { source: string; chunk_index: number; text: string }[] =
+      [];
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       body: createSSEStream([
-        'event: citation\ndata: {"source": "doc.md", "chunk_index": 0}\n\n',
+        'event: citation\ndata: {"source": "doc.md", "chunk_index": 0, "text": "PurpleFrog leapt across the mossy stones."}\n\n',
+        'event: citation\ndata: {"source": "doc.md", "chunk_index": 1, "text": "SnowRaven watched from the tall pine."}\n\n',
         'event: done\ndata: {"chat_id": "test-id"}\n\n',
       ]),
     });
@@ -78,7 +80,18 @@ describe("streamCharacterChat", () => {
       }
     );
 
-    expect(citations).toEqual([{ source: "doc.md", chunk_index: 0 }]);
+    expect(citations).toEqual([
+      {
+        source: "doc.md",
+        chunk_index: 0,
+        text: "PurpleFrog leapt across the mossy stones.",
+      },
+      {
+        source: "doc.md",
+        chunk_index: 1,
+        text: "SnowRaven watched from the tall pine.",
+      },
+    ]);
   });
 
   it("calls onGap for gap events", async () => {

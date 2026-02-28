@@ -1,7 +1,20 @@
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { MessageBubble } from "@/components/message-bubble";
 import type { Message } from "@/types";
+
+vi.mock("@/lib/app-state", () => ({
+  useAppState: () => ({
+    characters: [
+      {
+        id: "purplefrog",
+        name: "PurpleFrog",
+        initials: "PF",
+        color: "#7C3AED",
+      },
+    ],
+  }),
+}));
 
 describe("MessageBubble", () => {
   const userMessage: Message = {

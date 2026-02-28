@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Menu } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,10 @@ import { AppStateProvider } from "@/lib/app-state";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Defer the mobile Sheet to client-only to avoid Radix useId() mismatches
+  // caused by portal rendering differences between SSR and hydration.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   return (
     <AppStateProvider>
@@ -33,20 +37,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           />
         </div>
 
-        {/* Mobile hamburger + sheet */}
-        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <div className="md:hidden fixed top-3 left-3 z-40">
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9">
-                <Menu className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-          </div>
-          <SheetContent side="left" className="w-72 p-0">
-            <SheetTitle className="sr-only">Navigation</SheetTitle>
-            <AppSidebar />
-          </SheetContent>
-        </Sheet>
+        {/* Mobile hamburger + sheet — rendered client-only to prevent hydration mismatch */}
+        {mounted && (
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <div className="md:hidden fixed top-3 left-3 z-40">
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-9 w-9">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+            </div>
+            <SheetContent side="left" className="w-72 p-0">
+              <SheetTitle className="sr-only">Navigation</SheetTitle>
+              <AppSidebar />
+            </SheetContent>
+          </Sheet>
+        )}
 
         {/* Main content */}
         <main

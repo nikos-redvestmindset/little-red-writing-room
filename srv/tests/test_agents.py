@@ -1,8 +1,9 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langchain_core.documents import Document
+from langgraph.checkpoint.memory import MemorySaver
 
 from agents.avatar.agent import AvatarAgentBuilder
 from agents.avatar.config import AvatarAgentSettings
@@ -83,17 +84,25 @@ def test_tavily_tool_returns_results():
 
 @pytest.mark.asyncio
 async def test_avatar_agent_produces_output():
-    builder = AvatarAgentBuilder(settings=AvatarAgentSettings())
-    graph = builder.compile()
-    result = await graph.ainvoke(
-        {
-            "query": "What drives PurpleFrog?",
-            "intent": "in_character",
-            "retrieval_context": "dummy context",
-            "tavily_context": None,
-            "gap_flags": [],
-        }
-    )
+    fake_llm_response = MagicMock()
+    fake_llm_response.content = "PurpleFrog is driven by curiosity."
+
+    with patch("agents.avatar.agent.ChatOpenAI") as MockLLM:
+        instance = MockLLM.return_value
+        instance.ainvoke = AsyncMock(return_value=fake_llm_response)
+
+        builder = AvatarAgentBuilder(settings=AvatarAgentSettings())
+        graph = builder.compile()
+        result = await graph.ainvoke(
+            {
+                "query": "What drives PurpleFrog?",
+                "intent": "in_character",
+                "retrieval_context": "dummy context",
+                "tavily_context": None,
+                "gap_flags": [],
+                "conversation_history": [],
+            }
+        )
     assert "response_text" in result
     assert len(result["response_text"]) > 0
     assert "citations" in result
@@ -147,13 +156,20 @@ async def test_supervisor_produces_full_output(populated_qdrant, fake_embeddings
         mock.invoke = kwargs["base_retriever"].invoke
         return mock
 
+    fake_llm_response = MagicMock()
+    fake_llm_response.content = "PurpleFrog is driven by curiosity and loyalty."
+
     with (
         patch("agents.tools.retrieval.tool.CohereRerank"),
         patch(
             "agents.tools.retrieval.tool.ContextualCompressionRetriever",
             side_effect=_bypass_rerank,
         ),
+        patch("agents.avatar.agent.ChatOpenAI") as MockLLM,
     ):
+        instance = MockLLM.return_value
+        instance.ainvoke = AsyncMock(return_value=fake_llm_response)
+
         builder = SupervisorAgentBuilder(
             settings=SupervisorAgentSettings(),
             retrieval_tool_builder=RetrievalToolBuilder(
@@ -216,3 +232,33 @@ def test_compile_is_cached():
     graph1 = builder.compile()
     graph2 = builder.compile()
     assert graph1 is graph2
+
+
+@pytest.mark.asyncio
+async def test_supervisor_with_checkpointer_and_thread_id(qdrant_in_memory, fake_embeddings):
+    """Supervisor compiled with a MemorySaver accepts thread_id in config."""
+    checkpointer = MemorySaver()
+    builder = SupervisorAgentBuilder(
+        settings=SupervisorAgentSettings(),
+        retrieval_tool_builder=RetrievalToolBuilder(
+            settings=RetrievalToolSettings(cohere_api_key="unused"),
+            qdrant_client=qdrant_in_memory,
+            embeddings=fake_embeddings,
+        ),
+        tavily_tool_builder=TavilyToolBuilder(settings=TavilyToolSettings()),
+        avatar_agent_builder=AvatarAgentBuilder(settings=AvatarAgentSettings()),
+        gap_detection_builder=GapDetectionAgentBuilder(settings=GapDetectionAgentSettings()),
+        checkpointer=checkpointer,
+    )
+    graph = builder.compile()
+    config = {"configurable": {"thread_id": "test-thread-1"}}
+    result = await graph.ainvoke(
+        {
+            "message": "Hello",
+            "character_id": "purplefrog",
+            "conversation_history": [],
+            "narrative_state": {},
+        },
+        config=config,
+    )
+    assert "response_text" in result

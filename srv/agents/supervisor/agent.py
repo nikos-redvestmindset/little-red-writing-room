@@ -1,6 +1,7 @@
 import json
 import logging
 
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -46,12 +47,14 @@ class SupervisorAgentBuilder(AgentBuilder):
         tavily_tool_builder,
         avatar_agent_builder,
         gap_detection_builder,
+        checkpointer: MemorySaver | None = None,
     ) -> None:
         self.settings = settings
         self.retrieval_tool = retrieval_tool_builder.build()
         self.tavily_tool = tavily_tool_builder.build()
         self.avatar_agent = avatar_agent_builder.compile()
         self.gap_detection_agent = gap_detection_builder.compile()
+        self._checkpointer = checkpointer
 
     def _build(self) -> CompiledStateGraph:
         graph = StateGraph(
@@ -95,7 +98,7 @@ class SupervisorAgentBuilder(AgentBuilder):
         graph.add_edge("call_gap_detection_agent", "call_avatar_agent")
         graph.add_edge("call_avatar_agent", END)
 
-        return graph.compile()
+        return graph.compile(checkpointer=self._checkpointer)
 
     # ── Node implementations ──────────────────────────────────────────────
 
@@ -143,6 +146,7 @@ class SupervisorAgentBuilder(AgentBuilder):
                 "retrieval_context": state.get("retrieval_result", ""),
                 "tavily_context": state.get("tavily_result"),
                 "gap_flags": state.get("gap_flags", []),
+                "conversation_history": state.get("conversation_history", []),
             }
         )
         return {

@@ -8,6 +8,7 @@ class AvatarInput(TypedDict):
     retrieval_context: str
     tavily_context: str | None
     gap_flags: list[dict[str, str]]
+    conversation_history: list[dict[str, str]]
 
 
 class AvatarOutput(TypedDict):
@@ -22,5 +23,6 @@ class AvatarState(TypedDict):
     retrieval_context: str
     tavily_context: str | None
     gap_flags: list[dict[str, str]]
+    conversation_history: list[dict[str, str]]
     response_text: str
     citations: list[dict[str, Any]]

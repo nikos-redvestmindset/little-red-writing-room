@@ -51,13 +51,15 @@ class AvatarSessionService:
         history = self._read_history(chat_id)
         narrative_state = self._read_narrative_state(chat_id)
 
+        config = {"configurable": {"thread_id": chat_id}}
         result = await self._supervisor_graph.ainvoke(
             {
                 "message": message,
                 "character_id": character_id,
                 "conversation_history": history,
                 "narrative_state": narrative_state,
-            }
+            },
+            config=config,
         )
 
         response_text = result.get("response_text", "")

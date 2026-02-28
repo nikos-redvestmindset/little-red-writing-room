@@ -1,7 +1,72 @@
-import type { Message } from "@/types";
-import { getAvatarById } from "@/lib/dummy-data";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { ChevronRight } from "lucide-react";
+import type { Message, Citation } from "@/types";
+import { useAppState } from "@/lib/app-state";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+
+const COLLAPSED_LINES = 2;
+
+function CitationEntry({ citation }: { citation: Citation }) {
+  const [expanded, setExpanded] = useState(false);
+  const [clamped, setClamped] = useState(false);
+  const quoteRef = useRef<HTMLSpanElement>(null);
+
+  const checkClamp = useCallback(() => {
+    const el = quoteRef.current;
+    if (el) setClamped(el.scrollHeight > el.clientHeight + 1);
+  }, []);
+
+  useEffect(() => {
+    checkClamp();
+  }, [checkClamp, citation.quote]);
+
+  return (
+    <div className="text-xs text-muted-foreground border-l-2 border-primary/30 pl-3 py-1">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-1 font-medium hover:text-foreground transition-colors text-left"
+      >
+        <ChevronRight
+          className={cn(
+            "h-3 w-3 shrink-0 transition-transform duration-200",
+            expanded && "rotate-90"
+          )}
+        />
+        {citation.sourceDocument}
+      </button>
+      <span
+        ref={quoteRef}
+        className={cn(
+          "block italic mt-0.5",
+          !expanded && `line-clamp-[${COLLAPSED_LINES}]`
+        )}
+        style={
+          !expanded
+            ? {
+                WebkitLineClamp: COLLAPSED_LINES,
+                display: "-webkit-box",
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }
+            : undefined
+        }
+      >
+        &ldquo;{citation.quote}&rdquo;
+      </span>
+      {clamped && !expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="text-primary/70 hover:text-primary mt-0.5 text-[10px] font-medium"
+        >
+          Show more
+        </button>
+      )}
+    </div>
+  );
+}
 
 interface MessageBubbleProps {
   message: Message;
@@ -9,7 +74,10 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === "user";
-  const avatar = message.avatarId ? getAvatarById(message.avatarId) : null;
+  const { characters } = useAppState();
+  const avatar = message.avatarId
+    ? characters.find((c) => c.id === message.avatarId) ?? null
+    : null;
 
   return (
     <div
@@ -48,15 +116,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         {message.citations && message.citations.length > 0 && (
           <div className="space-y-1 px-1">
             {message.citations.map((citation, i) => (
-              <div
-                key={i}
-                className="text-xs text-muted-foreground border-l-2 border-primary/30 pl-3 py-1"
-              >
-                <span className="font-medium">{citation.sourceDocument}</span>
-                <span className="block italic mt-0.5">
-                  &ldquo;{citation.quote}&rdquo;
-                </span>
-              </div>
+              <CitationEntry key={i} citation={citation} />
             ))}
           </div>
         )}

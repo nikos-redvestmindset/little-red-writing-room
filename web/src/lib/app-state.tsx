@@ -10,8 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import type { Character, UploadedFile, ExtractionProgress } from "@/types";
-import { avatars } from "@/lib/dummy-data";
 import {
+  listCharacters as apiListCharacters,
+  createCharacter as apiCreateCharacter,
+  deleteCharacterApi,
   uploadDocument,
   listDocuments,
   deleteDocument,
@@ -43,29 +45,25 @@ function pickColor(index: number): string {
   return COLOR_PALETTE[index % COLOR_PALETTE.length];
 }
 
-const seedCharacters: Character[] = avatars.map((a) => ({
-  id: a.id,
-  name: a.name,
-  initials: a.initials,
-  color: a.color,
-}));
-
 interface AppState {
   characters: Character[];
+  charactersLoading: boolean;
   files: UploadedFile[];
   filesLoading: boolean;
-  addCharacter: (name: string) => void;
-  deleteCharacter: (id: string) => void;
+  addCharacter: (name: string) => Promise<void>;
+  deleteCharacter: (id: string) => Promise<void>;
   addFile: (file: File) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   extractKnowledge: (fileId: string, characterNames: string[]) => void;
   loadFiles: () => Promise<void>;
+  loadCharacters: () => Promise<void>;
 }
 
 const AppStateContext = createContext<AppState | null>(null);
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const [characters, setCharacters] = useState<Character[]>(seedCharacters);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [charactersLoading, setCharactersLoading] = useState(false);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const loadedRef = useRef(false);
@@ -78,6 +76,25 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     },
     []
   );
+
+  const loadCharacters = useCallback(async () => {
+    setCharactersLoading(true);
+    try {
+      const chars = await apiListCharacters();
+      setCharacters(
+        chars.map((c) => ({
+          id: c.id,
+          name: c.name,
+          initials: c.initials,
+          color: c.color,
+        }))
+      );
+    } catch {
+      // Backend not available — keep local state
+    } finally {
+      setCharactersLoading(false);
+    }
+  }, []);
 
   const loadFiles = useCallback(async () => {
     setFilesLoading(true);
@@ -106,27 +123,42 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loadedRef.current) {
       loadedRef.current = true;
+      loadCharacters();
       loadFiles();
     }
-  }, [loadFiles]);
+  }, [loadCharacters, loadFiles]);
 
   const addCharacter = useCallback(
-    (name: string) => {
+    async (name: string) => {
       const trimmed = name.trim();
       if (!trimmed) return;
-      const newChar: Character = {
-        id: `char-${Date.now()}`,
-        name: trimmed,
-        initials: generateInitials(trimmed),
-        color: pickColor(characters.length),
-      };
-      setCharacters((prev) => [...prev, newChar]);
+      const initials = generateInitials(trimmed);
+      const color = pickColor(characters.length);
+      try {
+        const created = await apiCreateCharacter(trimmed, initials, color);
+        setCharacters((prev) => [
+          ...prev,
+          {
+            id: created.id,
+            name: created.name,
+            initials: created.initials,
+            color: created.color,
+          },
+        ]);
+      } catch {
+        // API failure — don't add locally
+      }
     },
     [characters.length]
   );
 
-  const deleteCharacter = useCallback((id: string) => {
+  const deleteCharacter = useCallback(async (id: string) => {
     setCharacters((prev) => prev.filter((c) => c.id !== id));
+    try {
+      await deleteCharacterApi(id);
+    } catch {
+      // Optimistic removal — don't re-add on failure
+    }
   }, []);
 
   const addFile = useCallback(async (file: File) => {
@@ -205,6 +237,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     <AppStateContext.Provider
       value={{
         characters,
+        charactersLoading,
         files,
         filesLoading,
         addCharacter,
@@ -213,6 +246,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         deleteFile,
         extractKnowledge,
         loadFiles,
+        loadCharacters,
       }}
     >
       {children}

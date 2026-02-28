@@ -23,8 +23,41 @@ const mockUploadDocument = vi.fn();
 const mockListDocuments = vi.fn();
 const mockDeleteDocument = vi.fn();
 const mockStreamExtractKnowledge = vi.fn();
+const mockListCharacters = vi.fn().mockResolvedValue([
+  {
+    id: "purplefrog",
+    name: "PurpleFrog",
+    initials: "PF",
+    color: "#7C3AED",
+    created_at: "2024-01-01",
+  },
+  {
+    id: "snowraven",
+    name: "SnowRaven",
+    initials: "SR",
+    color: "#64748B",
+    created_at: "2024-01-01",
+  },
+  {
+    id: "ochramags",
+    name: "OchraMags",
+    initials: "OM",
+    color: "#D97706",
+    created_at: "2024-01-01",
+  },
+  {
+    id: "myaxserp",
+    name: "MyaxSerp",
+    initials: "MY",
+    color: "#DC2626",
+    created_at: "2024-01-01",
+  },
+]);
 
 vi.mock("@/lib/api", () => ({
+  listCharacters: (...args: unknown[]) => mockListCharacters(...args),
+  createCharacter: vi.fn(),
+  deleteCharacterApi: vi.fn(),
   uploadDocument: (...args: unknown[]) => mockUploadDocument(...args),
   listDocuments: (...args: unknown[]) => mockListDocuments(...args),
   deleteDocument: (...args: unknown[]) => mockDeleteDocument(...args),

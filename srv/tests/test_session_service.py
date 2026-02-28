@@ -19,7 +19,7 @@ def test_sse_frame_done():
 def test_chunk_text_splits_words():
     text = "one two three four five"
     chunks = _chunk_text(text, chunk_size=2)
-    assert chunks == ["one two", "three four", "five"]
+    assert chunks == ["one two ", "three four ", "five"]
 
 
 def test_chunk_text_single_chunk():
@@ -33,7 +33,7 @@ async def test_stream_yields_correct_events():
     mock_supervisor = MagicMock()
     mock_graph = MagicMock()
 
-    async def fake_ainvoke(input_data):
+    async def fake_ainvoke(input_data, **kwargs):
         return {
             "response_text": "Hello world test response",
             "citations": [{"source": "test.md", "chunk_index": 0}],

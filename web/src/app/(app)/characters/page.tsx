@@ -11,9 +11,9 @@ export default function CharactersPage() {
   const { characters, addCharacter, deleteCharacter } = useAppState();
   const [newName, setNewName] = useState("");
 
-  function handleAdd() {
+  async function handleAdd() {
     if (!newName.trim()) return;
-    addCharacter(newName);
+    await addCharacter(newName);
     setNewName("");
   }
 

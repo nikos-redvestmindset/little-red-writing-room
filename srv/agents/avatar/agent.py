@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -43,6 +43,7 @@ class AvatarAgentBuilder(AgentBuilder):
         raw_retrieval = state.get("retrieval_context", "")
         tavily_context = state.get("tavily_context")
         gap_flags = state.get("gap_flags", [])
+        conversation_history = state.get("conversation_history", [])
 
         chunks, citations = _parse_retrieval(raw_retrieval)
 
@@ -62,14 +63,24 @@ class AvatarAgentBuilder(AgentBuilder):
             query=query,
         )
 
+        messages: list[SystemMessage | HumanMessage | AIMessage] = [
+            SystemMessage(content=system_content),
+        ]
+        for turn in conversation_history:
+            role = turn.get("role", "")
+            content = turn.get("content", "")
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                messages.append(AIMessage(content=content))
+        messages.append(HumanMessage(content=human_content))
+
         llm = ChatOpenAI(
             model=self.settings.model,
             temperature=0,
             api_key=self._openai_api_key or None,
         )
-        response = await llm.ainvoke(
-            [SystemMessage(content=system_content), HumanMessage(content=human_content)]
-        )
+        response = await llm.ainvoke(messages)
 
         return {"response_text": response.content, "citations": citations}
 
