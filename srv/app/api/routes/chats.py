@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from agents.session.service import AvatarSessionService
-from app.api.routes.chat import get_current_user_id
+from app.api.deps import get_current_user_id
 from app.containers import ApplicationContainer
 
 logger = logging.getLogger(__name__)

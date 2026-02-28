@@ -6,6 +6,11 @@ import type {
   SSEGapEvent,
   SSEDoneEvent,
 } from "@/types/chat";
+import type { ExtractionProgress } from "@/types";
+
+function apiUrl(): string {
+  return process.env.NEXT_PUBLIC_API_URL ?? "";
+}
 
 async function getBearerToken(): Promise<string> {
   const supabase = createClient();
@@ -22,7 +27,7 @@ export async function createChat(
   title?: string
 ): Promise<void> {
   const token = await getBearerToken();
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chats`, {
+  const res = await fetch(`${apiUrl()}/chats`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -49,7 +54,7 @@ export async function listChats(): Promise<
   }[]
 > {
   const token = await getBearerToken();
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chats`, {
+  const res = await fetch(`${apiUrl()}/chats`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error(`Failed to list chats: HTTP ${res.status}`);
@@ -68,7 +73,7 @@ export async function streamCharacterChat(
 ): Promise<void> {
   const token = await getBearerToken();
 
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chat/stream`, {
+  const res = await fetch(`${apiUrl()}/chat/stream`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -104,6 +109,115 @@ export async function streamCharacterChat(
       if (eventLine === "citation") handlers.onCitation(payload);
       if (eventLine === "gap") handlers.onGap(payload);
       if (eventLine === "done") handlers.onDone(payload);
+      if (eventLine === "error") handlers.onError(payload.message);
+    }
+  }
+}
+
+// ── Document APIs ─────────────────────────────────────────────────────────────
+
+export interface DocumentResponse {
+  id: string;
+  filename: string;
+  size: number;
+  status: string;
+  uploaded_at: string;
+  chunks_stored?: number;
+  error_message?: string;
+}
+
+export async function uploadDocument(file: File): Promise<DocumentResponse> {
+  const token = await getBearerToken();
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${apiUrl()}/documents/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upload failed: HTTP ${res.status} — ${text}`);
+  }
+  return res.json();
+}
+
+export async function listDocuments(): Promise<DocumentResponse[]> {
+  const token = await getBearerToken();
+  const res = await fetch(`${apiUrl()}/documents`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Failed to list documents: HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function deleteDocument(docId: string): Promise<void> {
+  const token = await getBearerToken();
+  const res = await fetch(`${apiUrl()}/documents/${docId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Failed to delete document: HTTP ${res.status}`);
+}
+
+export async function streamExtractKnowledge(
+  docId: string,
+  selectedCharacters: string[],
+  pipelineOption: string,
+  handlers: {
+    onProgress: (e: ExtractionProgress) => void;
+    onComplete: (e: { chunks_stored: number }) => void;
+    onError: (msg: string) => void;
+  }
+): Promise<void> {
+  const token = await getBearerToken();
+
+  const res = await fetch(`${apiUrl()}/documents/${docId}/extract`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      selected_characters: selectedCharacters,
+      pipeline_option: pipelineOption,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    handlers.onError(`HTTP ${res.status} — ${text}`);
+    return;
+  }
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+
+    for (const frame of frames) {
+      const eventLine = frame.match(/^event: (.+)$/m)?.[1];
+      const dataLine = frame.match(/^data: (.+)$/m)?.[1];
+      if (!dataLine) continue;
+
+      const payload = JSON.parse(dataLine);
+      if (eventLine === "progress") {
+        handlers.onProgress({
+          stage: payload.stage,
+          progressPct: payload.progress_pct,
+          chunksTotal: payload.chunks_total,
+          chunksProcessed: payload.chunks_processed,
+        });
+      }
+      if (eventLine === "complete") handlers.onComplete(payload);
       if (eventLine === "error") handlers.onError(payload.message);
     }
   }

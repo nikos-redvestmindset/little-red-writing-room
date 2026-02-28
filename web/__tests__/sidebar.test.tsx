@@ -14,9 +14,11 @@ describe("AppSidebar", () => {
     expect(screen.getByText("Little Red Writing Room")).toBeInTheDocument();
   });
 
-  it("renders the new chat button", () => {
+  it("renders the main navigation links", () => {
     render(<AppSidebar />);
-    expect(screen.getByText("New chat")).toBeInTheDocument();
+    expect(screen.getByText("Chats")).toBeInTheDocument();
+    expect(screen.getByText("Characters")).toBeInTheDocument();
+    expect(screen.getByText("Content")).toBeInTheDocument();
   });
 
   it("renders thread list from dummy data", () => {
@@ -31,11 +33,6 @@ describe("AppSidebar", () => {
   it("shows the Recent section header", () => {
     render(<AppSidebar />);
     expect(screen.getByText("Recent")).toBeInTheDocument();
-  });
-
-  it("renders the upload files button", () => {
-    render(<AppSidebar />);
-    expect(screen.getByText("Upload files")).toBeInTheDocument();
   });
 
   it("renders the user menu", () => {

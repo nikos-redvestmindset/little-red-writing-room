@@ -1,4 +1,3 @@
-
 from fastapi.testclient import TestClient
 
 from tests.conftest import TEST_CHAT_ID, _make_supabase_table_mock
@@ -34,9 +33,16 @@ def test_list_chats(test_app, auth_headers):
     app, mock_service = test_app
     supabase = mock_service.get_supabase_client()
 
-    supabase.table.return_value = _make_supabase_table_mock(data=[
-        {"id": "chat-1", "character_id": "purplefrog", "title": "Test", "updated_at": "2026-01-01"},
-    ])
+    supabase.table.return_value = _make_supabase_table_mock(
+        data=[
+            {
+                "id": "chat-1",
+                "character_id": "purplefrog",
+                "title": "Test",
+                "updated_at": "2026-01-01",
+            },
+        ]
+    )
 
     client = TestClient(app)
     response = client.get("/chats", headers=auth_headers)
@@ -86,9 +92,7 @@ def test_delete_chat(test_app, auth_headers):
     app, mock_service = test_app
     supabase = mock_service.get_supabase_client()
 
-    supabase.table.return_value = _make_supabase_table_mock(
-        data=[{"id": TEST_CHAT_ID}]
-    )
+    supabase.table.return_value = _make_supabase_table_mock(data=[{"id": TEST_CHAT_ID}])
 
     client = TestClient(app)
     response = client.delete(f"/chats/{TEST_CHAT_ID}", headers=auth_headers)

@@ -1,28 +1,19 @@
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from agents.session.service import AvatarSessionService
-from app.auth import verify_supabase_jwt
+from app.api.deps import get_current_user_id
 from app.containers import ApplicationContainer
 
 router = APIRouter()
-security = HTTPBearer()
 
 
 class ChatStreamRequest(BaseModel):
     chat_id: str
     character_id: str
     message: str
-
-
-async def get_current_user_id(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> str:
-    payload = verify_supabase_jwt(credentials.credentials)
-    return payload["sub"]
 
 
 @router.post("/stream")

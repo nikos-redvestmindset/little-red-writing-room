@@ -27,10 +27,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    from app.api.routes import chat, chats, health
+    from app.api.routes import chat, chats, documents, health
 
     app.include_router(chat.router, prefix="/chat")
     app.include_router(chats.router)
+    app.include_router(documents.router, prefix="/documents")
     app.include_router(health.router)
 
     return app

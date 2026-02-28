@@ -10,14 +10,24 @@ dependencies = [
     "dependency-injector",
     "python-jose[cryptography]",
     "supabase",
+    "langchain",
     "langchain-core",
     "langchain-openai",
+    "langchain-qdrant",
+    "langchain-cohere",
+    "langchain-tavily",
+    "langchain-experimental",
+    "langchain-text-splitters",
     "langgraph",
+    "qdrant-client",
     "httpx",
     "psycopg[binary]",
+    "python-multipart",
+    "python-docx",
 ]
 
 [project.optional-dependencies]
+modal = ["modal"]
 dev = [
     "pytest",
     "pytest-asyncio",

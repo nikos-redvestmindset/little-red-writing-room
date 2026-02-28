@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
+from langchain_core.embeddings import DeterministicFakeEmbedding
+from qdrant_client import QdrantClient
 
 os.environ.setdefault("APP_SUPABASE_URL", "https://test.supabase.co")
 os.environ.setdefault("APP_SUPABASE_SERVICE_KEY", "test-service-key")
@@ -80,9 +82,7 @@ def test_app(mock_session_service):
     app = create_app()
     container: ApplicationContainer = app.state.container
 
-    container.avatar_session_service.override(
-        providers.Object(mock_session_service)
-    )
+    container.avatar_session_service.override(providers.Object(mock_session_service))
 
     yield app, mock_session_service
 
@@ -93,3 +93,18 @@ def test_app(mock_session_service):
 def client(test_app):
     app, _ = test_app
     return TestClient(app)
+
+
+# ── Pipeline fixtures ──────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def fake_embeddings():
+    """Deterministic fake embeddings — no OpenAI calls, consistent vectors."""
+    return DeterministicFakeEmbedding(size=128)
+
+
+@pytest.fixture
+def qdrant_in_memory():
+    """Fresh in-memory Qdrant client per test."""
+    return QdrantClient(location=":memory:")

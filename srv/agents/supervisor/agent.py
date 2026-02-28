@@ -11,6 +11,13 @@ from agents.supervisor.schemas import SupervisorInput, SupervisorOutput, Supervi
 logger = logging.getLogger(__name__)
 
 
+_NO_CONTEXT_RESPONSE = (
+    "I don't have any reference material to work with yet. "
+    "Please upload your documents and select **Extract** to build "
+    "the knowledge base, then ask me again!"
+)
+
+
 class SupervisorAgentBuilder(AgentBuilder):
     """Orchestrates a single chat turn.
 
@@ -19,13 +26,17 @@ class SupervisorAgentBuilder(AgentBuilder):
       _tool   -- invokes a LangChain tool and returns its result to state
       _agent  -- delegates to a compiled sub-agent graph
 
-    Flow:
+    Flow::
+
       classify_intent_node
         -> call_retrieval_tool
-        -> [conditional] call_tavily_tool
-        -> [conditional] call_gap_detection_agent
-        -> call_avatar_agent
-        -> END -> SupervisorOutput bundle
+        -> [route_after_retrieval]
+            no_context  -> handle_no_context -> END
+            tavily      -> call_tavily_tool  -> [route_after_tavily]
+                              gap_detection -> call_gap_detection_agent -> call_avatar_agent -> END
+                              avatar        -> call_avatar_agent -> END
+            gap_detection -> call_gap_detection_agent -> call_avatar_agent -> END
+            avatar        -> call_avatar_agent -> END
     """
 
     def __init__(
@@ -51,6 +62,7 @@ class SupervisorAgentBuilder(AgentBuilder):
 
         graph.add_node("classify_intent_node", self._classify_intent_node)
         graph.add_node("call_retrieval_tool", self._call_retrieval_tool)
+        graph.add_node("handle_no_context", self._handle_no_context)
         graph.add_node("call_tavily_tool", self._call_tavily_tool)
         graph.add_node("call_gap_detection_agent", self._call_gap_detection_agent)
         graph.add_node("call_avatar_agent", self._call_avatar_agent)
@@ -60,16 +72,26 @@ class SupervisorAgentBuilder(AgentBuilder):
 
         graph.add_conditional_edges(
             "call_retrieval_tool",
-            self._needs_tavily,
-            {"yes": "call_tavily_tool", "no": "call_gap_detection_agent"},
+            self._route_after_retrieval,
+            {
+                "no_context": "handle_no_context",
+                "tavily": "call_tavily_tool",
+                "gap_detection": "call_gap_detection_agent",
+                "avatar": "call_avatar_agent",
+            },
         )
-        graph.add_edge("call_tavily_tool", "call_gap_detection_agent")
+
+        graph.add_edge("handle_no_context", END)
 
         graph.add_conditional_edges(
-            "call_gap_detection_agent",
-            self._needs_gap_detection,
-            {"yes": "call_gap_detection_agent", "no": "call_avatar_agent"},
+            "call_tavily_tool",
+            self._route_after_tavily,
+            {
+                "gap_detection": "call_gap_detection_agent",
+                "avatar": "call_avatar_agent",
+            },
         )
+
         graph.add_edge("call_gap_detection_agent", "call_avatar_agent")
         graph.add_edge("call_avatar_agent", END)
 
@@ -81,11 +103,23 @@ class SupervisorAgentBuilder(AgentBuilder):
         return {
             "intent": "in_character",
             "resolved_characters": [state.get("character_id", "unknown")],
+            "gap_flags": [],
+            "tavily_used": False,
         }
 
     async def _call_retrieval_tool(self, state: SupervisorState) -> dict:
         result = self.retrieval_tool.invoke(state["message"])
         return {"retrieval_result": result}
+
+    async def _handle_no_context(self, state: SupervisorState) -> dict:
+        logger.info("No knowledge base context available — returning guidance")
+        return {
+            "response_text": _NO_CONTEXT_RESPONSE,
+            "citations": [],
+            "gap_flags": [],
+            "narrative_state_delta": {},
+            "tavily_used": False,
+        }
 
     async def _call_tavily_tool(self, state: SupervisorState) -> dict:
         result = self.tavily_tool.invoke(state["message"])
@@ -104,6 +138,7 @@ class SupervisorAgentBuilder(AgentBuilder):
         result = await self.avatar_agent.ainvoke(
             {
                 "query": state["message"],
+                "character_id": state.get("character_id", ""),
                 "intent": state.get("intent", "in_character"),
                 "retrieval_context": state.get("retrieval_result", ""),
                 "tavily_context": state.get("tavily_result"),
@@ -119,23 +154,37 @@ class SupervisorAgentBuilder(AgentBuilder):
 
     # ── Routing predicates ────────────────────────────────────────────────
 
-    def _needs_tavily(self, state: SupervisorState) -> str:
-        retrieval_raw = state.get("retrieval_result", "")
-        if not retrieval_raw:
-            return "no"
+    def _parse_retrieval(self, state: SupervisorState) -> dict | None:
+        raw = state.get("retrieval_result", "")
+        if not raw:
+            return None
         try:
-            parsed = json.loads(retrieval_raw)
-            has_refs = bool(parsed.get("external_references"))
-            return "yes" if has_refs else "no"
+            return json.loads(raw)
         except (json.JSONDecodeError, AttributeError):
-            return "no"
+            return None
 
-    def _needs_gap_detection(self, state: SupervisorState) -> str:
-        retrieval_raw = state.get("retrieval_result", "")
-        if not retrieval_raw:
-            return "no"
-        try:
-            parsed = json.loads(retrieval_raw)
-            return "yes" if parsed.get("low_confidence", False) else "no"
-        except (json.JSONDecodeError, AttributeError):
-            return "no"
+    def _route_after_retrieval(self, state: SupervisorState) -> str:
+        parsed = self._parse_retrieval(state)
+
+        if parsed is None:
+            return "no_context"
+
+        low_confidence = parsed.get("low_confidence", False)
+        has_chunks = bool(parsed.get("ranked_chunks"))
+
+        if low_confidence and not has_chunks:
+            return "no_context"
+
+        if parsed.get("external_references"):
+            return "tavily"
+
+        if low_confidence:
+            return "gap_detection"
+
+        return "avatar"
+
+    def _route_after_tavily(self, state: SupervisorState) -> str:
+        parsed = self._parse_retrieval(state)
+        if parsed and parsed.get("low_confidence", False):
+            return "gap_detection"
+        return "avatar"

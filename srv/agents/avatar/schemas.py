@@ -3,6 +3,7 @@ from typing import Any, TypedDict
 
 class AvatarInput(TypedDict):
     query: str
+    character_id: str
     intent: str
     retrieval_context: str
     tavily_context: str | None
@@ -16,6 +17,7 @@ class AvatarOutput(TypedDict):
 
 class AvatarState(TypedDict):
     query: str
+    character_id: str
     intent: str
     retrieval_context: str
     tavily_context: str | None

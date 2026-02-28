@@ -71,7 +71,7 @@ export default function ThreadPage() {
                           ...(m.citations ?? []),
                           {
                             sourceDocument: citation.source,
-                            quote: `[chunk ${citation.chunk_index}]`,
+                            quote: citation.text,
                           },
                         ],
                       }

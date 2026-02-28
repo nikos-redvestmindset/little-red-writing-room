@@ -13,13 +13,24 @@ export interface Character {
   color: string;
 }
 
+export interface ExtractionProgress {
+  stage: string;
+  progressPct: number;
+  chunksTotal?: number;
+  chunksProcessed?: number;
+}
+
 export interface UploadedFile {
   id: string;
   name: string;
   size: number;
   uploadedAt: string;
+  status: "uploading" | "uploaded" | "extracting" | "extracted" | "error";
   knowledgeExtracted: boolean;
   extractionEntities: string[];
+  chunksStored?: number;
+  extractionProgress?: ExtractionProgress;
+  errorMessage?: string;
 }
 
 export interface GapFlag {

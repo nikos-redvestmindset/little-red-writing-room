@@ -158,10 +158,17 @@ def _sse_frame(event: str, data: dict) -> str:
 
 
 def _chunk_text(text: str, chunk_size: int = 20) -> list[str]:
-    """Split text into small chunks to simulate token-by-token streaming."""
+    """Split text into small chunks to simulate token-by-token streaming.
+
+    Splits on spaces only (preserving embedded newlines for paragraph structure)
+    and appends a trailing space to every non-final chunk so that the frontend
+    can concatenate chunks without losing word boundaries.
+    """
     words = text.split(" ")
     chunks = []
     for i in range(0, len(words), chunk_size):
         chunk = " ".join(words[i : i + chunk_size])
+        if i + chunk_size < len(words):
+            chunk += " "
         chunks.append(chunk)
     return chunks
