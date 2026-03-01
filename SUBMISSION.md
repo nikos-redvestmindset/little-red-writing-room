@@ -101,6 +101,8 @@ See [PRODUCT.md — Evaluation Questions](./docs/PRODUCT.md#evaluation-questions
 
 ### Deliverable 1 — End-to-end prototype (local endpoint)
 
+**Demo video:** [loom.com/share/16a1c2b8341d493d9a44e66c51aa739b](https://www.loom.com/share/16a1c2b8341d493d9a44e66c51aa739b)
+
 Full setup and run instructions are in the [README](./README.md) (sections 1–8), including environment variables, migrations, and how to upload and extract the sample documents.
 
 **Code locations:**
@@ -212,5 +214,5 @@ Option B wins on every metric. Context recall nearly triples (+142.6%) and faith
 | Asset                     | Link                                                                                                                       |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | GitHub Repo               | [github.com/nikos-redvestmindset/little-red-writing-room](https://github.com/nikos-redvestmindset/little-red-writing-room) |
-| Loom Demo Video (≤ 5 min) |                                                                                                                            |
+| Loom Demo Video (≤ 5 min) | [loom.com/share/16a1c2b8341d493d9a44e66c51aa739b](https://www.loom.com/share/16a1c2b8341d493d9a44e66c51aa739b)             |
 | This document             | [SUBMISSION.md](https://github.com/nikos-redvestmindset/little-red-writing-room/blob/main/SUBMISSION.md)                   |
