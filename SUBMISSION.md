@@ -205,7 +205,12 @@ Option B wins on every metric. Context recall nearly triples (+142.6%) and faith
 
 ### Deliverable 1 — Will you keep Dense Vector Retrieval for Demo Day?
 
-<!-- State your decision and explain your reasoning -->
+Yes. I plan to continue building up the same application for Demo Day. There are a few things I'd like to do/polish:
+
+1. Deployment to the cloud.
+2. Extraction of not just characters but locations and other entities so the writer can start building a knowledge base of their IP.
+3. Proper data persistence in Qdrant Cloud and Supabase for files and chunks.
+4. Implement the "Recent chats" feature that is currently in mock phase.
 
 ---
 
