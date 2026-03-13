@@ -3,9 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from supabase import Client
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +80,8 @@ class SupabaseProgressNotifier:
     InMemory, just a different event transport underneath.
     """
 
-    def __init__(self, supabase_url: str, supabase_service_key: str) -> None:
-        self._supabase_url = supabase_url
-        self._supabase_service_key = supabase_service_key
+    def __init__(self, client: "Client") -> None:
+        self._client = client
 
     async def notify(self, document_id: str, event: ProgressEvent) -> None:
         raise NotImplementedError("SupabaseProgressNotifier.notify() not yet implemented")

@@ -6,12 +6,20 @@ export interface Avatar {
   color: string;
 }
 
-export interface Character {
+import type { StoryEntityType } from "@/lib/story-entities/registry";
+
+export interface StoryEntity {
   id: string;
+  entityType: StoryEntityType;
   name: string;
   initials: string;
   color: string;
 }
+
+/** @deprecated Use StoryEntity instead */
+export type Character = StoryEntity;
+/** @deprecated Use StoryEntity instead */
+export type Location = StoryEntity;
 
 export interface ExtractionProgress {
   stage: string;
@@ -28,6 +36,7 @@ export interface UploadedFile {
   status: "uploading" | "uploaded" | "extracting" | "extracted" | "error";
   knowledgeExtracted: boolean;
   extractionEntities: string[];
+  extractedEntityIds: string[];
   chunksStored?: number;
   extractionProgress?: ExtractionProgress;
   errorMessage?: string;

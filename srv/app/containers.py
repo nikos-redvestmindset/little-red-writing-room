@@ -2,6 +2,7 @@ from dependency_injector import containers, providers
 from langchain_openai import OpenAIEmbeddings
 from langgraph.checkpoint.memory import MemorySaver
 from qdrant_client import QdrantClient
+from supabase import Client, create_client
 
 from agents.avatar.agent import AvatarAgentBuilder
 from agents.avatar.config import AvatarAgentSettings
@@ -17,9 +18,16 @@ from agents.tools.tavily.tool import TavilyToolBuilder
 from app.config import AppSettings
 from app.services.document_store import InMemoryDocumentStore, SupabaseDocumentStore
 from app.services.progress import InMemoryProgressNotifier, SupabaseProgressNotifier
+from app.story_entities.service import StoryEntityService
 from pipeline.config import IngestionPipelineSettings
 from pipeline.runner import LocalPipelineRunner, ModalPipelineRunner
 from pipeline.service import IngestionPipelineService
+
+
+def _create_qdrant_client(qdrant_url: str, qdrant_api_key: str) -> QdrantClient:
+    if qdrant_url:
+        return QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+    return QdrantClient(location=":memory:")
 
 
 def _create_pipeline_runner(
@@ -32,29 +40,27 @@ def _create_pipeline_runner(
 
 
 def _create_document_store(
-    use_supabase: bool,
-    supabase_url: str,
-    supabase_service_key: str,
+    app_env: str,
+    supabase_client: Client,
 ):
-    if use_supabase:
-        return SupabaseDocumentStore(supabase_url, supabase_service_key)
-    return InMemoryDocumentStore()
+    if app_env == "local":
+        return InMemoryDocumentStore()
+    return SupabaseDocumentStore(client=supabase_client)
 
 
 def _create_progress_notifier(
-    use_supabase: bool,
-    supabase_url: str,
-    supabase_service_key: str,
+    app_env: str,
+    supabase_client: Client,
 ):
-    if use_supabase:
-        return SupabaseProgressNotifier(supabase_url, supabase_service_key)
-    return InMemoryProgressNotifier()
+    if app_env == "local":
+        return InMemoryProgressNotifier()
+    return SupabaseProgressNotifier(client=supabase_client)
 
 
 class ApplicationContainer(containers.DeclarativeContainer):
     wiring_config = containers.WiringConfiguration(
         modules=[
-            "app.api.routes.characters",
+            "app.api.routes.story_entities",
             "app.api.routes.chat",
             "app.api.routes.chats",
             "app.api.routes.documents",
@@ -71,7 +77,16 @@ class ApplicationContainer(containers.DeclarativeContainer):
     ingestion_settings = providers.Singleton(IngestionPipelineSettings)
 
     # ── Shared singletons ─────────────────────────────────────────────────
-    qdrant_client = providers.Singleton(QdrantClient, location=":memory:")
+    supabase_client = providers.Singleton(
+        create_client,
+        supabase_url=app_settings.provided.supabase_url,
+        supabase_key=app_settings.provided.supabase_service_key,
+    )
+    qdrant_client = providers.Singleton(
+        _create_qdrant_client,
+        qdrant_url=ingestion_settings.provided.qdrant_url,
+        qdrant_api_key=ingestion_settings.provided.qdrant_api_key,
+    )
     embeddings = providers.Singleton(
         OpenAIEmbeddings,
         model=ingestion_settings.provided.embedding_model,
@@ -105,19 +120,23 @@ class ApplicationContainer(containers.DeclarativeContainer):
         pipeline=ingestion_pipeline,
     )
 
-    # ── Document store & progress notifier (Singleton — config-selectable) ─
+    # ── Document store & progress notifier (Singleton — env-selectable) ────
     document_store = providers.Singleton(
         _create_document_store,
-        use_supabase=app_settings.provided.use_supabase_storage,
-        supabase_url=app_settings.provided.supabase_url,
-        supabase_service_key=app_settings.provided.supabase_service_key,
+        app_env=app_settings.provided.env,
+        supabase_client=supabase_client,
     )
 
     progress_notifier = providers.Singleton(
         _create_progress_notifier,
-        use_supabase=app_settings.provided.use_supabase_storage,
-        supabase_url=app_settings.provided.supabase_url,
-        supabase_service_key=app_settings.provided.supabase_service_key,
+        app_env=app_settings.provided.env,
+        supabase_client=supabase_client,
+    )
+
+    # ── Story entities ─────────────────────────────────────────────────────
+    story_entity_service = providers.Factory(
+        StoryEntityService,
+        client=supabase_client,
     )
 
     # ── Sub-agent builders (Factory — produce CompiledStateGraphs) ────────
@@ -149,6 +168,5 @@ class ApplicationContainer(containers.DeclarativeContainer):
     avatar_session_service = providers.Factory(
         AvatarSessionService,
         supervisor_builder=supervisor_agent,
-        supabase_url=app_settings.provided.supabase_url,
-        supabase_service_key=app_settings.provided.supabase_service_key,
+        supabase_client=supabase_client,
     )

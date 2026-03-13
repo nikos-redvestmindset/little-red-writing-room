@@ -89,6 +89,7 @@ async def test_classify_chunks_async_attaches_metadata():
         content_type="dialogue",
         narrative_function="plot_event",
         characters_present=["PurpleFrog"],
+        locations_present=[],
         story_grid_tag="none",
         external_references=[],
         implied_gaps=[],
@@ -101,7 +102,9 @@ async def test_classify_chunks_async_attaches_metadata():
         new_callable=AsyncMock,
         return_value=classification,
     ):
-        result = await classify_chunks_async(chunks, ["PurpleFrog"], MagicMock())
+        result = await classify_chunks_async(
+            chunks, {"character": ["PurpleFrog"], "location": []}, MagicMock()
+        )
 
     assert len(result) == 1
     assert result[0].metadata["content_type"] == "dialogue"
@@ -145,7 +148,7 @@ async def test_baseline_pipeline_ingest(qdrant_in_memory, fake_embeddings):
         embeddings=fake_embeddings,
     )
 
-    count = await pipeline.ingest(SAMPLE_DOCS, [], pipeline_option="baseline")
+    count = await pipeline.ingest(SAMPLE_DOCS, {}, pipeline_option="baseline")
     assert count > 0
 
     collections = qdrant_in_memory.get_collections().collections
@@ -167,6 +170,7 @@ async def test_advanced_pipeline_ingest(qdrant_in_memory, fake_embeddings):
         content_type="internal_monologue",
         narrative_function="character_reveal",
         characters_present=["PurpleFrog"],
+        locations_present=[],
         story_grid_tag="none",
         external_references=[],
         implied_gaps=["What happened to her brother?"],
@@ -184,7 +188,7 @@ async def test_advanced_pipeline_ingest(qdrant_in_memory, fake_embeddings):
 
         count = await pipeline.ingest(
             SAMPLE_DOCS,
-            ["PurpleFrog", "SnowRaven"],
+            {"character": ["PurpleFrog", "SnowRaven"], "location": []},
             pipeline_option="advanced",
         )
 
@@ -205,7 +209,7 @@ async def test_pipeline_rejects_unknown_option(qdrant_in_memory, fake_embeddings
     )
 
     with pytest.raises(ValueError, match="Unknown pipeline_option"):
-        await pipeline.ingest(SAMPLE_DOCS, [], pipeline_option="unknown")
+        await pipeline.ingest(SAMPLE_DOCS, {}, pipeline_option="unknown")
 
 
 # ── Retrieval tool tests ─────────────────────────────────────────────────
@@ -239,7 +243,7 @@ async def test_ingest_then_retrieve(qdrant_in_memory, fake_embeddings):
         qdrant_client=qdrant_in_memory,
         embeddings=fake_embeddings,
     )
-    await pipeline.ingest(SAMPLE_DOCS, [], pipeline_option="baseline")
+    await pipeline.ingest(SAMPLE_DOCS, {}, pipeline_option="baseline")
 
     tool_settings = RetrievalToolSettings(
         collection_name=collection,
@@ -283,7 +287,7 @@ async def test_local_runner_delegates(qdrant_in_memory, fake_embeddings):
     )
     runner = LocalPipelineRunner(pipeline=pipeline)
 
-    count = await runner.run(SAMPLE_DOCS, [], "baseline")
+    count = await runner.run(SAMPLE_DOCS, {}, "baseline")
     assert count > 0
 
 
@@ -291,3 +295,127 @@ def test_modal_runner_lazy_import():
     """ModalPipelineRunner can be instantiated without modal installed."""
     runner = ModalPipelineRunner()
     assert runner._function_name == "process_document"
+
+
+# ── Extraction & re-extraction tests ─────────────────────────────────────
+
+
+def _count_points(qdrant, collection_name: str) -> int:
+    info = qdrant.get_collection(collection_name)
+    return info.points_count
+
+
+def _get_all_payloads(qdrant, collection_name: str) -> list[dict]:
+    from qdrant_client.models import ScrollRequest
+
+    result = qdrant.scroll(
+        collection_name=collection_name,
+        scroll_filter=None,
+        limit=1000,
+        with_payload=True,
+    )
+    return [point.payload for point in result[0]]
+
+
+@pytest.mark.asyncio
+async def test_first_extraction_stores_document_metadata(qdrant_in_memory, fake_embeddings):
+    """First extraction injects document_id and user_id into every chunk."""
+    collection = "test_first_extract"
+    pipeline = IngestionPipelineService(
+        settings=IngestionPipelineSettings(collection_name=collection),
+        qdrant_client=qdrant_in_memory,
+        embeddings=fake_embeddings,
+    )
+
+    doc_id = "doc-aaa"
+    user_id = "user-111"
+    count = await pipeline.ingest(
+        SAMPLE_DOCS, {}, pipeline_option="baseline",
+        document_id=doc_id, user_id=user_id,
+    )
+    assert count > 0
+
+    payloads = _get_all_payloads(qdrant_in_memory, collection)
+    assert len(payloads) == count
+    for p in payloads:
+        meta = p.get("metadata", {})
+        assert meta["document_id"] == doc_id
+        assert meta["user_id"] == user_id
+
+
+@pytest.mark.asyncio
+async def test_re_extraction_replaces_chunks(qdrant_in_memory, fake_embeddings):
+    """Re-extraction deletes old chunks then inserts new ones for the same document."""
+    collection = "test_re_extract"
+    pipeline = IngestionPipelineService(
+        settings=IngestionPipelineSettings(collection_name=collection),
+        qdrant_client=qdrant_in_memory,
+        embeddings=fake_embeddings,
+    )
+
+    doc_id = "doc-bbb"
+    user_id = "user-222"
+
+    first_count = await pipeline.ingest(
+        SAMPLE_DOCS, {}, pipeline_option="baseline",
+        document_id=doc_id, user_id=user_id,
+    )
+    assert first_count > 0
+    assert _count_points(qdrant_in_memory, collection) == first_count
+
+    pipeline.delete_document_chunks(doc_id, user_id)
+    assert _count_points(qdrant_in_memory, collection) == 0
+
+    second_docs = [
+        Document(
+            page_content=(
+                "PurpleFrog found her brother in the eastern tunnels. "
+                "SnowRaven was there too, perched on a rusted ventilation pipe. "
+                "The air smelled of copper and old rain."
+            ),
+            metadata={"source": "test-doc-v2.md"},
+        ),
+    ]
+    second_count = await pipeline.ingest(
+        second_docs, {}, pipeline_option="baseline",
+        document_id=doc_id, user_id=user_id,
+    )
+    assert second_count > 0
+    assert _count_points(qdrant_in_memory, collection) == second_count
+
+    payloads = _get_all_payloads(qdrant_in_memory, collection)
+    for p in payloads:
+        meta = p.get("metadata", {})
+        assert meta["document_id"] == doc_id
+        assert meta["user_id"] == user_id
+
+
+@pytest.mark.asyncio
+async def test_delete_only_affects_target_document(qdrant_in_memory, fake_embeddings):
+    """Deleting chunks for doc A does not remove doc B's chunks."""
+    collection = "test_multi_doc"
+    pipeline = IngestionPipelineService(
+        settings=IngestionPipelineSettings(collection_name=collection),
+        qdrant_client=qdrant_in_memory,
+        embeddings=fake_embeddings,
+    )
+
+    user_id = "user-333"
+    count_a = await pipeline.ingest(
+        SAMPLE_DOCS, {}, pipeline_option="baseline",
+        document_id="doc-A", user_id=user_id,
+    )
+    count_b = await pipeline.ingest(
+        [Document(page_content="Totally different content about dragons.", metadata={"source": "b.md"})],
+        {}, pipeline_option="baseline",
+        document_id="doc-B", user_id=user_id,
+    )
+    assert _count_points(qdrant_in_memory, collection) == count_a + count_b
+
+    pipeline.delete_document_chunks("doc-A", user_id)
+    assert _count_points(qdrant_in_memory, collection) == count_b
+
+    payloads = _get_all_payloads(qdrant_in_memory, collection)
+    for p in payloads:
+        meta = p.get("metadata", {})
+        assert meta["document_id"] == "doc-B"

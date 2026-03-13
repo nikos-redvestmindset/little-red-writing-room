@@ -144,6 +144,7 @@ async def populated_qdrant(qdrant_in_memory, fake_embeddings):
             ),
         ],
         [],
+        [],
         pipeline_option="baseline",
     )
     return qdrant_in_memory

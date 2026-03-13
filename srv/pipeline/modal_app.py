@@ -35,8 +35,10 @@ image = modal.Image.debian_slim(python_version="3.11").pip_install(
 @app.function(image=image, timeout=600)
 async def process_document(
     documents: list[dict],
-    known_characters: list[str],
+    known_entities: dict[str, list[str]],
     pipeline_option: str,
+    document_id: str | None = None,
+    user_id: str | None = None,
 ) -> int:
     """Modal entry point.
 
@@ -64,4 +66,7 @@ async def process_document(
     )
 
     docs = [Document(**d) for d in documents]
-    return await pipeline.ingest(docs, known_characters, pipeline_option)
+    return await pipeline.ingest(
+        docs, known_entities, pipeline_option,
+        document_id=document_id, user_id=user_id,
+    )

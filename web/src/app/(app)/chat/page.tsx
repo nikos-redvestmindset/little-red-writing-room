@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import type { Character, Message } from "@/types";
+import type { StoryEntity, Message } from "@/types";
 import { AvatarSelector } from "@/components/avatar-selector";
 import { ChatArea } from "@/components/chat-area";
 import { createChat, streamCharacterChat } from "@/lib/api";
@@ -9,7 +9,7 @@ import { useAppState } from "@/lib/app-state";
 
 export default function NewChatPage() {
   const { loadChats } = useAppState();
-  const [selectedAvatar, setSelectedAvatar] = useState<Character | null>(null);
+  const [selectedAvatar, setSelectedAvatar] = useState<StoryEntity | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const chatIdRef = useRef<string | null>(null);

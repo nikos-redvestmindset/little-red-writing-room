@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -44,30 +44,27 @@ async def test_stream_yields_correct_events():
     mock_graph.ainvoke = fake_ainvoke
     mock_supervisor.compile.return_value = mock_graph
 
-    with patch("agents.session.service.create_client") as mock_create:
-        mock_supabase = MagicMock()
-        mock_create.return_value = mock_supabase
+    mock_supabase = MagicMock()
 
-        table = MagicMock()
-        table.select.return_value = table
-        table.eq.return_value = table
-        table.order.return_value = table
-        table.limit.return_value = table
-        table.maybe_single.return_value = table
-        table.insert.return_value = table
-        table.upsert.return_value = table
+    table = MagicMock()
+    table.select.return_value = table
+    table.eq.return_value = table
+    table.order.return_value = table
+    table.limit.return_value = table
+    table.maybe_single.return_value = table
+    table.insert.return_value = table
+    table.upsert.return_value = table
 
-        result_empty = MagicMock()
-        result_empty.data = []
-        table.execute.return_value = result_empty
+    result_empty = MagicMock()
+    result_empty.data = []
+    table.execute.return_value = result_empty
 
-        mock_supabase.table.return_value = table
+    mock_supabase.table.return_value = table
 
-        service = AvatarSessionService(
-            supervisor_builder=mock_supervisor,
-            supabase_url="https://test.supabase.co",
-            supabase_service_key="test-key",
-        )
+    service = AvatarSessionService(
+        supervisor_builder=mock_supervisor,
+        supabase_client=mock_supabase,
+    )
 
     events = []
     async for frame in service.stream(

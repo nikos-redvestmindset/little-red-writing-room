@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react";
 import type { Message, Citation } from "@/types";
 import { useAppState } from "@/lib/app-state";
 import { cn } from "@/lib/utils";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { StoryEntityAvatar } from "@/components/story-entity-avatar";
 
 const COLLAPSED_LINES = 2;
 
@@ -87,14 +87,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       )}
     >
       {!isUser && (
-        <Avatar className="h-8 w-8 shrink-0 rounded-sm">
-          <AvatarFallback
-            className="rounded-sm text-xs font-medium text-white"
-            style={{ backgroundColor: avatar?.color ?? "#8B2E3B" }}
-          >
-            {avatar?.initials ?? "AI"}
-          </AvatarFallback>
-        </Avatar>
+        <StoryEntityAvatar
+          initials={avatar?.initials ?? "AI"}
+          color={avatar?.color ?? "#8B2E3B"}
+          entityType="character"
+          size="md"
+        />
       )}
 
       <div className="space-y-2 min-w-0">

@@ -10,5 +10,7 @@ class IngestionPipelineSettings(BaseSettings):
     chunk_overlap: int = 50
     overlap_sentences: int = 3
     use_modal: bool = False
+    qdrant_url: str = ""
+    qdrant_api_key: str = ""
 
     model_config = {"env_prefix": "PIPELINE_", "env_file": ".env", "extra": "ignore"}

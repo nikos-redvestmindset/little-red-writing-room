@@ -4,12 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   MessageSquare,
-  Users,
   FileText,
   PanelLeftClose,
   PanelLeft,
 } from "lucide-react";
 import { useAppState } from "@/lib/app-state";
+import { STORY_ENTITY_TYPES } from "@/lib/story-entities/registry";
+import { StoryEntityAvatar } from "@/components/story-entity-avatar";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -22,9 +23,13 @@ import { UserMenu } from "@/components/user-menu";
 
 const NAV_ITEMS = [
   { href: "/chat", label: "Chats", icon: MessageSquare },
-  { href: "/characters", label: "Characters", icon: Users },
+  ...STORY_ENTITY_TYPES.map((cfg) => ({
+    href: cfg.href,
+    label: cfg.plural,
+    icon: cfg.icon,
+  })),
   { href: "/content", label: "Content", icon: FileText },
-] as const;
+];
 
 interface AppSidebarProps {
   collapsed?: boolean;
@@ -38,7 +43,6 @@ export function AppSidebar({ collapsed, onToggleCollapse }: AppSidebarProps) {
   if (collapsed) {
     return (
       <div className="flex h-full flex-col items-center bg-sidebar py-3">
-        {/* Expand button */}
         {onToggleCollapse && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -55,7 +59,6 @@ export function AppSidebar({ collapsed, onToggleCollapse }: AppSidebarProps) {
           </Tooltip>
         )}
 
-        {/* Icon-only nav */}
         <div className="space-y-1">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const isActive =
@@ -165,14 +168,12 @@ export function AppSidebar({ collapsed, onToggleCollapse }: AppSidebarProps) {
                       : "text-sidebar-foreground hover:bg-sidebar-accent/60"
                   )}
                 >
-                  <div
-                    className="h-5 w-5 shrink-0 rounded-md flex items-center justify-center text-[10px] font-medium text-white"
-                    style={{
-                      backgroundColor: character?.color ?? "#8B2E3B",
-                    }}
-                  >
-                    {character?.initials ?? "?"}
-                  </div>
+                  <StoryEntityAvatar
+                    initials={character?.initials ?? "?"}
+                    color={character?.color ?? "#8B2E3B"}
+                    entityType="character"
+                    size="sm"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate font-medium text-xs">

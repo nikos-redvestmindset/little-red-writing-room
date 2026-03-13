@@ -3,7 +3,7 @@ import logging
 from collections.abc import AsyncGenerator
 
 from fastapi import HTTPException
-from supabase import Client, create_client
+from supabase import Client
 
 from agents.supervisor.agent import SupervisorAgentBuilder
 
@@ -21,11 +21,10 @@ class AvatarSessionService:
     def __init__(
         self,
         supervisor_builder: SupervisorAgentBuilder,
-        supabase_url: str,
-        supabase_service_key: str,
+        supabase_client: Client,
     ) -> None:
         self._supervisor_graph = supervisor_builder.compile()
-        self._supabase: Client = create_client(supabase_url, supabase_service_key)
+        self._supabase = supabase_client
 
     def get_supabase_client(self) -> Client:
         return self._supabase

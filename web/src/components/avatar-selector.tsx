@@ -1,12 +1,13 @@
 "use client";
 
 import { useAppState } from "@/lib/app-state";
-import type { Character } from "@/types";
+import type { StoryEntity } from "@/types";
 import { cn } from "@/lib/utils";
+import { StoryEntityAvatar } from "@/components/story-entity-avatar";
 
 interface AvatarSelectorProps {
   selectedId: string | null;
-  onSelect: (character: Character) => void;
+  onSelect: (character: StoryEntity) => void;
 }
 
 export function AvatarSelector({ selectedId, onSelect }: AvatarSelectorProps) {
@@ -36,12 +37,12 @@ export function AvatarSelector({ selectedId, onSelect }: AvatarSelectorProps) {
                 : "border-border"
             )}
           >
-            <div
-              className="h-8 w-8 shrink-0 rounded-md flex items-center justify-center text-xs font-medium text-white"
-              style={{ backgroundColor: character.color }}
-            >
-              {character.initials}
-            </div>
+            <StoryEntityAvatar
+              initials={character.initials}
+              color={character.color}
+              entityType="character"
+              size="md"
+            />
             <span className="font-medium text-sm">{character.name}</span>
           </button>
         ))}

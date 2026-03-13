@@ -5,6 +5,7 @@ import io
 import json
 import logging
 import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from dependency_injector.wiring import Provide, inject
@@ -12,12 +13,14 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from langchain_core.documents import Document
 from pydantic import BaseModel
+from supabase import Client
 
 from app.api.deps import get_current_user_id
 from app.containers import ApplicationContainer
-from app.services.document_store import DocumentRecord, DocumentStore
+from app.services.document_store import DocumentRecord, DocumentStore, SupabaseDocumentStore
 from app.services.progress import ProgressEvent, ProgressNotifier
 from pipeline.runner import PipelineRunner
+from pipeline.service import IngestionPipelineService
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,8 @@ ALLOWED_MIME_TYPES = {
     "application/octet-stream",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+
+EXTRACTION_TRACKING_TABLE = "document_entity_extractions"
 
 
 def _sse_frame(event: str, data: dict) -> str:
@@ -46,8 +51,51 @@ def _parse_file_content(filename: str, raw: bytes) -> str:
     return raw.decode("utf-8")
 
 
+def _get_extraction_tracking(
+    supabase: Client, user_id: str, doc_ids: list[str],
+) -> dict[str, list[str]]:
+    """Return {document_id: [entity_id, ...]} for the given documents."""
+    if not doc_ids:
+        return {}
+    result = (
+        supabase.table(EXTRACTION_TRACKING_TABLE)
+        .select("document_id, entity_id")
+        .eq("user_id", user_id)
+        .in_("document_id", doc_ids)
+        .execute()
+    )
+    grouped: dict[str, list[str]] = defaultdict(list)
+    for row in result.data or []:
+        grouped[row["document_id"]].append(str(row["entity_id"]))
+    return grouped
+
+
+def _update_extraction_tracking(
+    supabase: Client,
+    user_id: str,
+    document_id: str,
+    entity_ids: list[str],
+) -> None:
+    """Replace extraction tracking rows for a document after re-extraction."""
+    supabase.table(EXTRACTION_TRACKING_TABLE).delete().eq(
+        "document_id", document_id
+    ).eq("user_id", user_id).execute()
+
+    if entity_ids:
+        rows = [
+            {
+                "document_id": document_id,
+                "entity_id": eid,
+                "user_id": user_id,
+            }
+            for eid in entity_ids
+        ]
+        supabase.table(EXTRACTION_TRACKING_TABLE).insert(rows).execute()
+
+
 class ExtractRequest(BaseModel):
-    selected_characters: list[str]
+    selected_entities: dict[str, list[str]]
+    selected_entity_ids: list[str] = []
     pipeline_option: str = "advanced"
 
 
@@ -85,7 +133,7 @@ async def upload_document(
         status="uploaded",
         uploaded_at=datetime.now(timezone.utc).isoformat(),
     )
-    await store.add(record)
+    await store.add(record, raw_bytes=raw)
 
     return {
         "id": record.id,
@@ -104,8 +152,11 @@ async def upload_document(
 async def list_documents(
     user_id: str = Depends(get_current_user_id),
     store: DocumentStore = Depends(Provide[ApplicationContainer.document_store]),
+    supabase: Client = Depends(Provide[ApplicationContainer.supabase_client]),
 ) -> list[dict]:
     docs = await store.list(user_id)
+    doc_ids = [d.id for d in docs]
+    tracking = _get_extraction_tracking(supabase, user_id, doc_ids)
     return [
         {
             "id": d.id,
@@ -115,6 +166,7 @@ async def list_documents(
             "uploaded_at": d.uploaded_at,
             "chunks_stored": d.chunks_stored,
             "error_message": d.error_message,
+            "extracted_entity_ids": tracking.get(d.id, []),
         }
         for d in docs
     ]
@@ -132,11 +184,19 @@ async def extract_knowledge(
     store: DocumentStore = Depends(Provide[ApplicationContainer.document_store]),
     notifier: ProgressNotifier = Depends(Provide[ApplicationContainer.progress_notifier]),
     runner: PipelineRunner = Depends(Provide[ApplicationContainer.ingestion_runner]),
+    pipeline: IngestionPipelineService = Depends(Provide[ApplicationContainer.ingestion_pipeline]),
+    supabase: Client = Depends(Provide[ApplicationContainer.supabase_client]),
 ) -> StreamingResponse:
-    doc = await store.get(user_id, document_id)
+    if isinstance(store, SupabaseDocumentStore):
+        doc = await store.get_with_content(user_id, document_id)
+    else:
+        doc = await store.get(user_id, document_id)
+
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    if doc.status not in ("uploaded", "error"):
+
+    is_re_extraction = doc.status == "extracted"
+    if doc.status not in ("uploaded", "error", "extracted"):
         raise HTTPException(
             status_code=409,
             detail=f"Document is already in status '{doc.status}', cannot extract",
@@ -147,7 +207,10 @@ async def extract_knowledge(
     async def _stream():
         async for event in notifier.subscribe(document_id):
             if event.stage == "complete":
-                yield _sse_frame("complete", {"chunks_stored": event.chunks_total or 0})
+                yield _sse_frame("complete", {
+                    "chunks_stored": event.chunks_total or 0,
+                    "extracted_entity_ids": body.selected_entity_ids,
+                })
             elif event.stage == "failed":
                 yield _sse_frame("error", {"message": event.message})
             else:
@@ -155,6 +218,9 @@ async def extract_knowledge(
 
     async def _run_pipeline():
         try:
+            if is_re_extraction:
+                pipeline.delete_document_chunks(document_id, user_id)
+
             lc_doc = Document(
                 page_content=doc.content,
                 metadata={"source": doc.filename},
@@ -178,14 +244,19 @@ async def extract_knowledge(
 
             chunk_count = await runner.run(
                 documents=[lc_doc],
-                known_characters=body.selected_characters,
+                known_entities=body.selected_entities,
                 pipeline_option=body.pipeline_option,
                 on_progress=_on_progress,
+                document_id=document_id,
+                user_id=user_id,
             )
             await store.update(
                 user_id, document_id,
                 status="extracted",
                 chunks_stored=chunk_count,
+            )
+            _update_extraction_tracking(
+                supabase, user_id, document_id, body.selected_entity_ids,
             )
         except Exception:
             logger.exception("Pipeline failed for document %s", document_id)

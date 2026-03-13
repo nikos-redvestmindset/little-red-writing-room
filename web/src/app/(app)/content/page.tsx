@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 import {
   Upload,
   Trash2,
@@ -9,8 +9,11 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle2,
+  RefreshCw,
 } from "lucide-react";
 import { useAppState } from "@/lib/app-state";
+import { STORY_ENTITY_TYPES } from "@/lib/story-entities/registry";
+import type { StoryEntityType } from "@/lib/story-entities/registry";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -24,6 +27,12 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { StoryEntityAvatar } from "@/components/story-entity-avatar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { UploadedFile } from "@/types";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -74,6 +83,45 @@ function FileStatusBadge({ file }: { file: UploadedFile }) {
     );
   }
   return null;
+}
+
+function ExtractionCoverageBadges({ file }: { file: UploadedFile }) {
+  const { entities } = useAppState();
+  if (file.status !== "extracted") return null;
+
+  const badges = STORY_ENTITY_TYPES.map((config) => {
+    const total = entities.filter((e) => e.entityType === config.key);
+    if (total.length === 0) return null;
+    const extracted = total.filter((e) =>
+      file.extractedEntityIds.includes(e.id)
+    );
+    const isComplete = extracted.length === total.length;
+    const tooltip = isComplete
+      ? `All ${config.plural.toLowerCase()} were included in the last extraction.`
+      : `${total.length - extracted.length} of ${total.length} ${config.plural.toLowerCase()} have not been extracted from this document yet.`;
+    return (
+      <Tooltip key={config.key}>
+        <TooltipTrigger asChild>
+          <Badge
+            variant="outline"
+            className={`text-[10px] h-5 px-2 shrink-0 cursor-default ${
+              isComplete
+                ? "text-muted-foreground border-border"
+                : "text-amber-600 border-amber-300"
+            }`}
+          >
+            {extracted.length}/{total.length} {config.plural.toLowerCase()}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs max-w-56">
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }).filter(Boolean);
+
+  if (badges.length === 0) return null;
+  return <>{badges}</>;
 }
 
 function ExtractionProgress({ file }: { file: UploadedFile }) {
@@ -191,6 +239,7 @@ export default function ContentPage() {
                             {file.name}
                           </span>
                           <FileStatusBadge file={file} />
+                          <ExtractionCoverageBadges file={file} />
                         </div>
                         <div className="flex items-center gap-3 mt-0.5">
                           <span className="text-xs text-muted-foreground">
@@ -219,6 +268,17 @@ export default function ContentPage() {
                         >
                           <Sparkles className="h-3.5 w-3.5" />
                           {file.status === "error" ? "Retry" : "Extract"}
+                        </Button>
+                      )}
+                      {file.status === "extracted" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setExtractDialogFileId(file.id)}
+                          className="h-8 gap-1.5 text-xs rounded-md"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Update
                         </Button>
                       )}
                       {file.status !== "extracting" &&
@@ -265,83 +325,176 @@ function ExtractKnowledgeDialog({
   fileId: string;
   onClose: () => void;
 }) {
-  const { characters, files, extractKnowledge } = useAppState();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const { entities, files, extractKnowledge } = useAppState();
   const file = files.find((f) => f.id === fileId);
+  const isReExtraction = file?.status === "extracted";
 
-  const allSelected =
-    characters.length > 0 && selected.size === characters.length;
-
-  function toggleAll() {
-    if (allSelected) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(characters.map((c) => c.name)));
+  const [selectedByType, setSelectedByType] = useState<
+    Record<string, Set<string>>
+  >(() => {
+    const initial: Record<string, Set<string>> = {};
+    for (const cfg of STORY_ENTITY_TYPES) {
+      if (isReExtraction) {
+        const previouslyExtracted = entities
+          .filter(
+            (e) =>
+              e.entityType === cfg.key &&
+              file?.extractedEntityIds.includes(e.id)
+          )
+          .map((e) => e.name);
+        initial[cfg.key] = new Set(previouslyExtracted);
+      } else {
+        initial[cfg.key] = new Set<string>();
+      }
     }
+    return initial;
+  });
+
+  const entitiesByType = useMemo(() => {
+    const grouped: Record<StoryEntityType, typeof entities> = {} as Record<
+      StoryEntityType,
+      typeof entities
+    >;
+    for (const cfg of STORY_ENTITY_TYPES) {
+      grouped[cfg.key] = entities.filter((e) => e.entityType === cfg.key);
+    }
+    return grouped;
+  }, [entities]);
+
+  function toggleAll(entityType: string) {
+    setSelectedByType((prev) => {
+      const typeEntities = entitiesByType[entityType as StoryEntityType] ?? [];
+      const allSelected = typeEntities.length > 0 && prev[entityType]?.size === typeEntities.length;
+      return {
+        ...prev,
+        [entityType]: allSelected
+          ? new Set<string>()
+          : new Set(typeEntities.map((e) => e.name)),
+      };
+    });
   }
 
-  function toggle(name: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
+  function toggleEntity(entityType: string, name: string) {
+    setSelectedByType((prev) => {
+      const next = new Set(prev[entityType]);
       if (next.has(name)) next.delete(name);
       else next.add(name);
-      return next;
+      return { ...prev, [entityType]: next };
     });
   }
 
   function handleRun() {
-    extractKnowledge(fileId, Array.from(selected));
+    const selectedEntities: Record<string, string[]> = {};
+    const selectedEntityIds: string[] = [];
+
+    for (const cfg of STORY_ENTITY_TYPES) {
+      const names = Array.from(selectedByType[cfg.key] ?? []);
+      selectedEntities[cfg.key] = names;
+
+      const typeEntities = entitiesByType[cfg.key] ?? [];
+      for (const name of names) {
+        const entity = typeEntities.find((e) => e.name === name);
+        if (entity) selectedEntityIds.push(entity.id);
+      }
+    }
+
+    extractKnowledge(fileId, selectedEntities, selectedEntityIds);
     onClose();
   }
 
   if (!file) return null;
 
+  const hasSelection = Object.values(selectedByType).some((s) => s.size > 0);
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md rounded-lg">
         <DialogHeader>
-          <DialogTitle className="text-base">Extract Knowledge</DialogTitle>
+          <DialogTitle className="text-base">
+            {isReExtraction ? "Update Extraction" : "Extract Knowledge"}
+          </DialogTitle>
           <DialogDescription>
-            Select characters to extract knowledge about from{" "}
+            Select entities to extract knowledge about from{" "}
             <span className="font-medium text-foreground">{file.name}</span>.
+            {isReExtraction && (
+              <span className="block mt-1 text-xs text-amber-600">
+                Previously extracted entities are pre-selected. This will
+                re-process all selected entities.
+              </span>
+            )}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 py-2">
-          {characters.length > 0 && (
-            <label className="flex items-center gap-2.5 px-1 cursor-pointer">
-              <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
-              <span className="text-sm font-medium">Select all</span>
-            </label>
-          )}
+          {STORY_ENTITY_TYPES.map((config, sectionIdx) => {
+            const typeEntities = entitiesByType[config.key] ?? [];
+            const selected = selectedByType[config.key] ?? new Set();
+            const allSelected =
+              typeEntities.length > 0 && selected.size === typeEntities.length;
 
-          <Separator />
+            return (
+              <div key={config.key}>
+                {sectionIdx > 0 && <Separator className="mb-3" />}
 
-          <div className="space-y-1 max-h-48 overflow-y-auto">
-            {characters.map((char) => (
-              <label
-                key={char.id}
-                className="flex items-center gap-2.5 px-1 py-1 rounded-md hover:bg-accent cursor-pointer"
-              >
-                <Checkbox
-                  checked={selected.has(char.name)}
-                  onCheckedChange={() => toggle(char.name)}
-                />
-                <div
-                  className="h-5 w-5 shrink-0 rounded-md flex items-center justify-center text-[9px] font-medium text-white"
-                  style={{ backgroundColor: char.color }}
-                >
-                  {char.initials}
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-1">
+                  {config.plural}
+                </span>
+
+                {typeEntities.length > 0 && (
+                  <label className="flex items-center gap-2.5 px-1 mt-2 cursor-pointer">
+                    <Checkbox
+                      checked={allSelected}
+                      onCheckedChange={() => toggleAll(config.key)}
+                    />
+                    <span className="text-sm font-medium">Select all</span>
+                  </label>
+                )}
+
+                <div className="space-y-1 max-h-32 overflow-y-auto mt-1">
+                  {typeEntities.map((entity) => {
+                    const wasExtracted =
+                      isReExtraction &&
+                      file.extractedEntityIds.includes(entity.id);
+                    return (
+                      <label
+                        key={entity.id}
+                        className="flex items-center gap-2.5 px-1 py-1 rounded-md hover:bg-accent cursor-pointer"
+                      >
+                        <Checkbox
+                          checked={selected.has(entity.name)}
+                          onCheckedChange={() =>
+                            toggleEntity(config.key, entity.name)
+                          }
+                        />
+                        <StoryEntityAvatar
+                          initials={entity.initials}
+                          color={entity.color}
+                          entityType={config.key}
+                          size="sm"
+                        />
+                        <span className="text-sm">{entity.name}</span>
+                        {wasExtracted && (
+                          <span className="text-[10px] text-muted-foreground ml-auto">
+                            extracted
+                          </span>
+                        )}
+                        {isReExtraction && !wasExtracted && (
+                          <span className="text-[10px] text-amber-600 ml-auto">
+                            new
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+                  {typeEntities.length === 0 && (
+                    <p className="text-sm text-muted-foreground px-1">
+                      No {config.plural.toLowerCase()} defined.
+                    </p>
+                  )}
                 </div>
-                <span className="text-sm">{char.name}</span>
-              </label>
-            ))}
-            {characters.length === 0 && (
-              <p className="text-sm text-muted-foreground px-1">
-                No characters defined. Add characters first.
-              </p>
-            )}
-          </div>
+              </div>
+            );
+          })}
         </div>
 
         <DialogFooter>
@@ -350,11 +503,11 @@ function ExtractKnowledgeDialog({
           </Button>
           <Button
             onClick={handleRun}
-            disabled={selected.size === 0}
+            disabled={!hasSelection}
             className="rounded-md"
           >
             <Sparkles className="h-4 w-4 mr-1.5" />
-            Run extraction
+            {isReExtraction ? "Update extraction" : "Run extraction"}
           </Button>
         </DialogFooter>
       </DialogContent>
