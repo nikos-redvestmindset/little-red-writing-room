@@ -48,6 +48,21 @@ async def create_character(
     ),
 ) -> dict:
     client = session_service.get_supabase_client()
+
+    existing = (
+        client.table("characters")
+        .select("id")
+        .eq("user_id", user_id)
+        .ilike("name", body.name)
+        .limit(1)
+        .execute()
+    )
+    if existing.data:
+        raise HTTPException(
+            status_code=409,
+            detail=f'A character named "{body.name}" already exists',
+        )
+
     result = (
         client.table("characters")
         .insert(

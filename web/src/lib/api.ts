@@ -61,6 +61,28 @@ export async function listChats(): Promise<
   return res.json();
 }
 
+export interface MessageResponse {
+  id: string;
+  chat_id: string;
+  role: "user" | "assistant";
+  content: string;
+  citations: { source: string; text: string }[] | null;
+  gap_flags: { attribute: string; suggestion: string }[] | null;
+  created_at: string;
+}
+
+export async function listMessages(
+  chatId: string
+): Promise<MessageResponse[]> {
+  const token = await getBearerToken();
+  const res = await fetch(`${apiUrl()}/chats/${chatId}/messages`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok)
+    throw new Error(`Failed to list messages: HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function streamCharacterChat(
   req: ChatStreamRequest,
   handlers: {
@@ -133,6 +155,13 @@ export async function listCharacters(): Promise<CharacterResponse[]> {
   return res.json();
 }
 
+export class DuplicateCharacterError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DuplicateCharacterError";
+  }
+}
+
 export async function createCharacter(
   name: string,
   initials: string,
@@ -147,6 +176,12 @@ export async function createCharacter(
     },
     body: JSON.stringify({ name, initials, color }),
   });
+  if (res.status === 409) {
+    const body = await res.json().catch(() => null);
+    throw new DuplicateCharacterError(
+      body?.detail ?? `"${name}" already exists`
+    );
+  }
   if (!res.ok) {
     throw new Error(`Failed to create character: HTTP ${res.status}`);
   }

@@ -1,20 +1,32 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { useAppState } from "@/lib/app-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function CharactersPage() {
-  const { characters, addCharacter, deleteCharacter } = useAppState();
+  const { characters, addCharacter, deleteCharacter, loadCharacters } =
+    useAppState();
   const [newName, setNewName] = useState("");
+
+  useEffect(() => {
+    loadCharacters();
+  }, [loadCharacters]);
 
   async function handleAdd() {
     if (!newName.trim()) return;
-    await addCharacter(newName);
-    setNewName("");
+    const result = await addCharacter(newName);
+    if (result.ok) {
+      setNewName("");
+    } else if (result.reason === "duplicate") {
+      toast.warning(result.message);
+    } else {
+      toast.error(result.message);
+    }
   }
 
   return (

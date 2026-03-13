@@ -5,8 +5,10 @@ import type { Character, Message } from "@/types";
 import { AvatarSelector } from "@/components/avatar-selector";
 import { ChatArea } from "@/components/chat-area";
 import { createChat, streamCharacterChat } from "@/lib/api";
+import { useAppState } from "@/lib/app-state";
 
 export default function NewChatPage() {
+  const { loadChats } = useAppState();
   const [selectedAvatar, setSelectedAvatar] = useState<Character | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -20,7 +22,8 @@ export default function NewChatPage() {
         const newChatId = crypto.randomUUID();
         chatIdRef.current = newChatId;
         try {
-          await createChat(newChatId, selectedAvatar.id);
+          await createChat(newChatId, selectedAvatar.id, truncateTitle(content));
+          loadChats();
         } catch (err) {
           console.error("Failed to create chat:", err);
           chatIdRef.current = null;
@@ -112,7 +115,7 @@ export default function NewChatPage() {
         setIsStreaming(false);
       }
     },
-    [selectedAvatar, isStreaming]
+    [selectedAvatar, isStreaming, loadChats]
   );
 
   if (!selectedAvatar) {
@@ -127,4 +130,13 @@ export default function NewChatPage() {
       disabled={isStreaming}
     />
   );
+}
+
+const MAX_TITLE_LENGTH = 40;
+
+function truncateTitle(text: string): string {
+  const trimmed = text.trim().replace(/\s+/g, " ");
+  if (trimmed.length <= MAX_TITLE_LENGTH) return trimmed;
+  const cut = trimmed.lastIndexOf(" ", MAX_TITLE_LENGTH);
+  return (cut > 0 ? trimmed.slice(0, cut) : trimmed.slice(0, MAX_TITLE_LENGTH)) + "…";
 }

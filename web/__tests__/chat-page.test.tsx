@@ -49,6 +49,9 @@ vi.mock("@/lib/app-state", () => ({
     extractKnowledge: vi.fn(),
     loadFiles: vi.fn(),
     loadCharacters: vi.fn(),
+    chats: [],
+    chatsLoading: false,
+    loadChats: vi.fn(),
   }),
   AppStateProvider: ({ children }: { children: React.ReactNode }) => children,
 }));

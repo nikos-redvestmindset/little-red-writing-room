@@ -38,6 +38,7 @@ async def list_chats(
         .select("id, character_id, title, created_at, updated_at")
         .eq("user_id", user_id)
         .order("updated_at", desc=True)
+        .limit(10)
         .execute()
     )
     return result.data
@@ -66,6 +67,36 @@ async def create_chat(
         .execute()
     )
     return result.data[0]
+
+
+@router.get("/chats/{chat_id}/messages")
+@inject
+async def list_messages(
+    chat_id: str,
+    user_id: str = Depends(get_current_user_id),
+    session_service: AvatarSessionService = Depends(
+        Provide[ApplicationContainer.avatar_session_service]
+    ),
+) -> list[dict]:
+    client = session_service.get_supabase_client()
+    chat = (
+        client.table("chats")
+        .select("id")
+        .eq("id", chat_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if not chat.data:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    result = (
+        client.table("messages")
+        .select("id, chat_id, role, content, citations, gap_flags, created_at")
+        .eq("chat_id", chat_id)
+        .order("created_at", desc=False)
+        .execute()
+    )
+    return result.data
 
 
 @router.patch("/chats/{chat_id}")

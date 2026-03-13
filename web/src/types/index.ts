@@ -62,6 +62,14 @@ export interface Thread {
   preview: string;
 }
 
+export interface ChatSummary {
+  id: string;
+  character_id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface UserProfile {
   id: string;
   email: string;

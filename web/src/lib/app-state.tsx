@@ -9,10 +9,17 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import type { Character, UploadedFile, ExtractionProgress } from "@/types";
+import type {
+  Character,
+  ChatSummary,
+  UploadedFile,
+  ExtractionProgress,
+} from "@/types";
 import {
   listCharacters as apiListCharacters,
+  listChats as apiListChats,
   createCharacter as apiCreateCharacter,
+  DuplicateCharacterError,
   deleteCharacterApi,
   uploadDocument,
   listDocuments,
@@ -45,18 +52,25 @@ function pickColor(index: number): string {
   return COLOR_PALETTE[index % COLOR_PALETTE.length];
 }
 
+export type AddCharacterResult =
+  | { ok: true }
+  | { ok: false; reason: "duplicate" | "error"; message: string };
+
 interface AppState {
   characters: Character[];
   charactersLoading: boolean;
+  chats: ChatSummary[];
+  chatsLoading: boolean;
   files: UploadedFile[];
   filesLoading: boolean;
-  addCharacter: (name: string) => Promise<void>;
+  addCharacter: (name: string) => Promise<AddCharacterResult>;
   deleteCharacter: (id: string) => Promise<void>;
   addFile: (file: File) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   extractKnowledge: (fileId: string, characterNames: string[]) => void;
   loadFiles: () => Promise<void>;
   loadCharacters: () => Promise<void>;
+  loadChats: () => Promise<void>;
 }
 
 const AppStateContext = createContext<AppState | null>(null);
@@ -64,6 +78,8 @@ const AppStateContext = createContext<AppState | null>(null);
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [charactersLoading, setCharactersLoading] = useState(false);
+  const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [chatsLoading, setChatsLoading] = useState(false);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const loadedRef = useRef(false);
@@ -96,6 +112,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const loadChats = useCallback(async () => {
+    setChatsLoading(true);
+    try {
+      const data = await apiListChats();
+      setChats(data);
+    } catch {
+      // Backend not available — keep local state
+    } finally {
+      setChatsLoading(false);
+    }
+  }, []);
+
   const loadFiles = useCallback(async () => {
     setFilesLoading(true);
     try {
@@ -124,14 +152,28 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (!loadedRef.current) {
       loadedRef.current = true;
       loadCharacters();
+      loadChats();
       loadFiles();
     }
-  }, [loadCharacters, loadFiles]);
+  }, [loadCharacters, loadChats, loadFiles]);
 
   const addCharacter = useCallback(
-    async (name: string) => {
+    async (name: string): Promise<AddCharacterResult> => {
       const trimmed = name.trim();
-      if (!trimmed) return;
+      if (!trimmed)
+        return { ok: false, reason: "error", message: "Name is required" };
+
+      const duplicate = characters.find(
+        (c) => c.name.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (duplicate) {
+        return {
+          ok: false,
+          reason: "duplicate",
+          message: `"${duplicate.name}" already exists`,
+        };
+      }
+
       const initials = generateInitials(trimmed);
       const color = pickColor(characters.length);
       try {
@@ -145,11 +187,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             color: created.color,
           },
         ]);
-      } catch {
-        // API failure — don't add locally
+        return { ok: true };
+      } catch (err) {
+        if (err instanceof DuplicateCharacterError) {
+          return { ok: false, reason: "duplicate", message: err.message };
+        }
+        return {
+          ok: false,
+          reason: "error",
+          message: "Failed to create character",
+        };
       }
     },
-    [characters.length]
+    [characters]
   );
 
   const deleteCharacter = useCallback(async (id: string) => {
@@ -238,6 +288,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       value={{
         characters,
         charactersLoading,
+        chats,
+        chatsLoading,
         files,
         filesLoading,
         addCharacter,
@@ -247,6 +299,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         extractKnowledge,
         loadFiles,
         loadCharacters,
+        loadChats,
       }}
     >
       {children}
