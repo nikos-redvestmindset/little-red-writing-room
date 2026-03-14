@@ -303,6 +303,7 @@ export async function streamExtractKnowledge(
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let receivedTerminal = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -326,8 +327,19 @@ export async function streamExtractKnowledge(
           chunksProcessed: payload.chunks_processed,
         });
       }
-      if (eventLine === "complete") handlers.onComplete(payload);
-      if (eventLine === "error") handlers.onError(payload.message);
+      if (eventLine === "complete") {
+        receivedTerminal = true;
+        handlers.onComplete(payload);
+      }
+      if (eventLine === "error") {
+        receivedTerminal = true;
+        handlers.onError(payload.message);
+      }
     }
+  }
+
+  if (!receivedTerminal) {
+    console.error(`[extraction] stream for ${docId} ended without complete/error`);
+    handlers.onError("Connection lost — the file is safe and can be re-extracted");
   }
 }

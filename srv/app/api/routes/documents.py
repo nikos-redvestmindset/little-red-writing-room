@@ -205,16 +205,27 @@ async def extract_knowledge(
     await store.update(user_id, document_id, status="extracting")
 
     async def _stream():
-        async for event in notifier.subscribe(document_id):
-            if event.stage == "complete":
-                yield _sse_frame("complete", {
-                    "chunks_stored": event.chunks_total or 0,
-                    "extracted_entity_ids": body.selected_entity_ids,
-                })
-            elif event.stage == "failed":
-                yield _sse_frame("error", {"message": event.message})
-            else:
-                yield _sse_frame("progress", event.model_dump())
+        try:
+            async for event in notifier.subscribe(document_id):
+                if event.stage == "complete":
+                    yield _sse_frame("complete", {
+                        "chunks_stored": event.chunks_total or 0,
+                        "extracted_entity_ids": body.selected_entity_ids,
+                    })
+                elif event.stage == "failed":
+                    yield _sse_frame("error", {"message": event.message})
+                else:
+                    yield _sse_frame("progress", event.model_dump())
+        except Exception:
+            logger.exception("SSE stream failed for document %s", document_id)
+            await store.update(
+                user_id, document_id,
+                status="error",
+                error_message="Extraction service unavailable",
+            )
+            yield _sse_frame("error", {
+                "message": "Extraction service unavailable — please try again later",
+            })
 
     async def _run_pipeline():
         try:
@@ -259,13 +270,13 @@ async def extract_knowledge(
                 supabase, user_id, document_id, body.selected_entity_ids,
             )
         except Exception:
-            logger.exception("Pipeline failed for document %s", document_id)
+            logger.exception("Extraction failed for document %s", document_id)
             await store.update(
-                user_id, document_id, status="error", error_message="Pipeline failed",
+                user_id, document_id, status="error", error_message="Extraction failed",
             )
             await notifier.notify(
                 document_id,
-                ProgressEvent(stage="failed", progress_pct=0, message="Pipeline failed"),
+                ProgressEvent(stage="failed", progress_pct=0, message="Extraction failed"),
             )
 
     asyncio.create_task(_run_pipeline())

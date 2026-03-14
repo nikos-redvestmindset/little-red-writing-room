@@ -317,6 +317,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             });
           },
           onError: (msg) => {
+            console.error(`[extraction] failed for ${fileId}:`, msg);
             updateFile(fileId, {
               status: "error",
               errorMessage: msg,
