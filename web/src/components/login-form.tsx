@@ -60,7 +60,10 @@ export function LoginForm() {
 
       <form onSubmit={handleEmailLogin} className="w-full max-w-xs space-y-3">
         <Input
+          id="email"
+          name="email"
           type="email"
+          autoComplete="email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -68,7 +71,10 @@ export function LoginForm() {
           className="h-11"
         />
         <Input
+          id="password"
+          name="password"
           type="password"
+          autoComplete="current-password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

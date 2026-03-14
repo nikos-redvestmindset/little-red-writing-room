@@ -186,6 +186,8 @@ export default function ContentPage() {
         </div>
         <div>
           <input
+            id="file-upload"
+            name="file-upload"
             ref={fileInputRef}
             type="file"
             multiple

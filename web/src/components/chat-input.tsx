@@ -37,6 +37,8 @@ export function ChatInput({
   return (
     <div className="relative">
       <Textarea
+        id="chat-message"
+        name="chat-message"
         ref={textareaRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}

@@ -52,6 +52,9 @@ export function StoryEntityPage({ entityType }: StoryEntityPageProps) {
         <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
           <div className="flex gap-2">
             <Input
+              id={`new-${entityType}-name`}
+              name={`new-${entityType}-name`}
+              autoComplete="off"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
