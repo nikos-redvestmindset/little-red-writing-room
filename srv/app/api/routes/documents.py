@@ -18,8 +18,13 @@ from supabase import Client
 from app.api.deps import get_current_user_id
 from app.containers import ApplicationContainer
 from app.services.document_store import DocumentRecord, DocumentStore, SupabaseDocumentStore
-from app.services.progress import ProgressEvent, ProgressNotifier
-from pipeline.runner import PipelineRunner
+from app.services.progress import (
+    PROCESSING_JOBS_TABLE,
+    ProgressEvent,
+    ProgressNotifier,
+    SupabaseProgressNotifier,
+)
+from pipeline.runner import ModalPipelineRunner, PipelineRunner
 from pipeline.service import IngestionPipelineService
 
 logger = logging.getLogger(__name__)
@@ -75,8 +80,9 @@ def _update_extraction_tracking(
     user_id: str,
     document_id: str,
     entity_ids: list[str],
+    note: str = "",
 ) -> None:
-    """Replace extraction tracking rows for a document after re-extraction."""
+    """Replace extraction tracking rows for a document after successful extraction."""
     supabase.table(EXTRACTION_TRACKING_TABLE).delete().eq(
         "document_id", document_id
     ).eq("user_id", user_id).execute()
@@ -87,10 +93,21 @@ def _update_extraction_tracking(
                 "document_id": document_id,
                 "entity_id": eid,
                 "user_id": user_id,
+                "note": note,
             }
             for eid in entity_ids
         ]
         supabase.table(EXTRACTION_TRACKING_TABLE).insert(rows).execute()
+
+
+def _build_extraction_note(
+    selected_entities: dict[str, list[str]], filename: str,
+) -> str:
+    """Build a human-readable one-liner for the extraction tracking note."""
+    all_names = sorted(n for names in selected_entities.values() for n in names)
+    if not all_names:
+        return f"from {filename}"
+    return f"{', '.join(all_names)} from {filename}"
 
 
 class ExtractRequest(BaseModel):
@@ -204,6 +221,22 @@ async def extract_knowledge(
 
     await store.update(user_id, document_id, status="extracting")
 
+    # For the Supabase notifier the processing_jobs row must exist before
+    # the first notify() (UPDATE) or subscribe() (LISTEN) call.
+    if isinstance(notifier, SupabaseProgressNotifier):
+        supabase.table(PROCESSING_JOBS_TABLE).upsert(
+            {
+                "document_id": document_id,
+                "user_id": user_id,
+                "current_stage": "pending",
+                "progress_pct": 0,
+                "message": "",
+            },
+            on_conflict="document_id",
+        ).execute()
+
+    note = _build_extraction_note(body.selected_entities, doc.filename)
+
     async def _stream():
         try:
             async for event in notifier.subscribe(document_id):
@@ -260,7 +293,14 @@ async def extract_knowledge(
                 on_progress=_on_progress,
                 document_id=document_id,
                 user_id=user_id,
+                selected_entity_ids=body.selected_entity_ids,
             )
+
+            # Modal handles its own status / tracking updates in the remote
+            # function — the spawn returned immediately with chunk_count=0.
+            if isinstance(runner, ModalPipelineRunner):
+                return
+
             await store.update(
                 user_id, document_id,
                 status="extracted",
@@ -268,6 +308,7 @@ async def extract_knowledge(
             )
             _update_extraction_tracking(
                 supabase, user_id, document_id, body.selected_entity_ids,
+                note=note,
             )
         except Exception:
             logger.exception("Extraction failed for document %s", document_id)

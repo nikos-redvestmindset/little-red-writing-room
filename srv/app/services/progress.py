@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
+    import asyncpg
     from supabase import Client
 
 logger = logging.getLogger(__name__)
+
+_DSN_RE = re.compile(r"^postgresql://([^:]+):(.+)@([^@]+):(\d+)/(.+)$")
+
+PROCESSING_JOBS_TABLE = "processing_jobs"
 
 
 class ProgressEvent(BaseModel):
@@ -66,27 +73,77 @@ class InMemoryProgressNotifier:
 
 
 class SupabaseProgressNotifier:
-    """Production implementation (stub).
+    """Production implementation backed by Postgres.
 
-    - ``notify()`` writes to ``processing_jobs`` table AND calls
-      ``pg_notify()`` on a channel keyed by document_id.
-    - ``subscribe()`` uses asyncpg ``LISTEN`` on the same channel,
-      yielding ``ProgressEvent`` objects as they arrive.
+    - ``notify()`` writes to the ``processing_jobs`` table. A BEFORE
+      INSERT/UPDATE trigger on the table automatically calls
+      ``pg_notify('doc_progress_{document_id}', payload_json)``.
+    - ``subscribe()`` opens a dedicated asyncpg connection and
+      ``LISTEN``s on the same channel, yielding ``ProgressEvent``
+      objects as they arrive.
 
     When Modal runs the pipeline on a separate machine, the Modal
-    function calls ``notify()`` which writes to Postgres + pg_notify.
-    The FastAPI server's ``subscribe()`` picks up the NOTIFY and
-    streams it to the browser via SSE — identical code path as
-    InMemory, just a different event transport underneath.
+    function calls ``notify()`` which writes to Postgres; the trigger
+    fires ``pg_notify``.  The FastAPI server's ``subscribe()`` picks
+    up the NOTIFY and streams it to the browser via SSE — identical
+    code path as InMemory, just a different event transport.
     """
 
-    def __init__(self, client: "Client") -> None:
+    def __init__(self, client: "Client", database_url: str = "") -> None:
         self._client = client
+        self._database_url = database_url
 
     async def notify(self, document_id: str, event: ProgressEvent) -> None:
-        raise NotImplementedError("SupabaseProgressNotifier.notify() not yet implemented")
+        self._client.table(PROCESSING_JOBS_TABLE).update(
+            {
+                "current_stage": event.stage,
+                "progress_pct": event.progress_pct,
+                "chunks_total": event.chunks_total,
+                "chunks_processed": event.chunks_processed,
+                "message": event.message,
+            }
+        ).eq("document_id", document_id).execute()
 
     async def subscribe(self, document_id: str) -> AsyncIterator[ProgressEvent]:
-        raise NotImplementedError("SupabaseProgressNotifier.subscribe() not yet implemented")
-        # Make this function a valid async generator for type-checking purposes
-        yield  # type: ignore[misc]  # pragma: no cover
+        import asyncpg as _asyncpg
+
+        if not self._database_url:
+            raise RuntimeError(
+                "SupabaseProgressNotifier.subscribe() requires a database_url "
+                "(set DATABASE_URL in .env)"
+            )
+
+        channel = f"doc_progress_{document_id}"
+
+        # Parse the DSN manually because Supabase passwords often contain
+        # special characters (%, //) that break asyncpg's URL parser.
+        m = _DSN_RE.match(self._database_url.strip().strip('"'))
+        if m:
+            conn: asyncpg.Connection = await _asyncpg.connect(
+                user=m.group(1), password=m.group(2),
+                host=m.group(3), port=int(m.group(4)), database=m.group(5),
+            )
+        else:
+            conn = await _asyncpg.connect(self._database_url)
+
+        queue: asyncio.Queue[str] = asyncio.Queue()
+
+        def _on_notification(
+            _conn: asyncpg.Connection,
+            _pid: int,
+            _channel: str,
+            payload: str,
+        ) -> None:
+            queue.put_nowait(payload)
+
+        await conn.add_listener(channel, _on_notification)
+        try:
+            while True:
+                payload = await asyncio.wait_for(queue.get(), timeout=60)
+                event = ProgressEvent.model_validate(json.loads(payload))
+                yield event
+                if event.stage in _TERMINAL_STAGES:
+                    break
+        finally:
+            await conn.remove_listener(channel, _on_notification)
+            await conn.close()

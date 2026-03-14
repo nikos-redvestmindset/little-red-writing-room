@@ -1,3 +1,5 @@
+import os
+
 from dependency_injector import containers, providers
 from langchain_openai import OpenAIEmbeddings
 from langgraph.checkpoint.memory import MemorySaver
@@ -54,7 +56,8 @@ def _create_progress_notifier(
 ):
     if app_env == "local":
         return InMemoryProgressNotifier()
-    return SupabaseProgressNotifier(client=supabase_client)
+    database_url = os.environ.get("DATABASE_URL", "")
+    return SupabaseProgressNotifier(client=supabase_client, database_url=database_url)
 
 
 class ApplicationContainer(containers.DeclarativeContainer):

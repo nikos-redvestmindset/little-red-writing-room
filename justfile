@@ -60,6 +60,38 @@ test-srv:
 lint-srv:
     cd srv && uv run ruff check .
 
+# ── modal (remote pipeline) ───────────────────────────────────────────────────
+
+# first-time Modal setup: install client, create secret, deploy the pipeline app
+create-modal:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; source srv/.env.cloud; set +a
+    cd srv
+    uv sync --extra modal
+    echo "Creating Modal secret 'lrwr-env'..."
+    uv run modal secret create lrwr-env \
+        APP_SUPABASE_URL="$APP_SUPABASE_URL" \
+        APP_SUPABASE_SERVICE_KEY="$APP_SUPABASE_SERVICE_KEY" \
+        APP_OPENAI_API_KEY="$APP_OPENAI_API_KEY" \
+        OPENAI_API_KEY="$APP_OPENAI_API_KEY" \
+        PIPELINE_COLLECTION_NAME="$PIPELINE_COLLECTION_NAME" \
+        PIPELINE_EMBEDDING_MODEL="$PIPELINE_EMBEDDING_MODEL" \
+        PIPELINE_CLASSIFICATION_MODEL="$PIPELINE_CLASSIFICATION_MODEL" \
+        PIPELINE_QDRANT_URL="$PIPELINE_QDRANT_URL" \
+        PIPELINE_QDRANT_API_KEY="$PIPELINE_QDRANT_API_KEY"
+    echo "Deploying Modal app 'lrwr-pipeline'..."
+    uv run modal deploy pipeline/modal_app.py
+    echo "Done. The pipeline is now available on Modal."
+
+# redeploy the Modal pipeline app (after code changes)
+deploy-modal:
+    cd srv && uv run --env-file .env.cloud modal deploy pipeline/modal_app.py
+
+# smoke-test the deployed Modal pipeline with a sample document
+test-modal:
+    cd srv && uv run --env-file .env.cloud python -m scripts.test_modal
+
 # ── database ──────────────────────────────────────────────────────────────────
 
 # apply pending Supabase migrations
