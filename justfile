@@ -20,8 +20,14 @@ setup-srv:
 
 # ── web (Next.js) ────────────────────────────────────────────────────────────
 
-# start the Next.js dev server
+# start the Next.js dev server with local config (web/.env.local)
 dev-web:
+    cd web && pnpm dev --port 3003
+
+# start the Next.js dev server with cloud config (web/.env.cloud)
+web:
+    #!/usr/bin/env bash
+    set -a; source web/.env.cloud; set +a
     cd web && pnpm dev --port 3003
 
 # build the Next.js production bundle
@@ -38,9 +44,13 @@ lint-web:
 
 # ── srv (FastAPI) ─────────────────────────────────────────────────────────────
 
-# start the FastAPI dev server (reload on file changes)
-dev-srv:
+# start the FastAPI dev server with local in-memory config (reload on file changes)
+dev-api:
     cd srv && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8008
+
+# start the FastAPI server with cloud config (Qdrant Cloud, Modal, APP_ENV=dev)
+api:
+    cd srv && uv run --env-file .env.cloud uvicorn app.main:app --reload --host 0.0.0.0 --port 8008
 
 # run FastAPI tests
 test-srv:
@@ -69,9 +79,6 @@ run-notebook:
 
 # ── combined ─────────────────────────────────────────────────────────────────
 
-# run both dev servers concurrently (requires a terminal multiplexer or parallel)
-dev:
-    just dev-srv & just dev-web
 
 # run all tests
 test: test-web test-srv
