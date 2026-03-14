@@ -4,12 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   MessageSquare,
-  Users,
   FileText,
   PanelLeftClose,
   PanelLeft,
 } from "lucide-react";
-import { threads, getAvatarById } from "@/lib/dummy-data";
+import { useAppState } from "@/lib/app-state";
+import { STORY_ENTITY_TYPES } from "@/lib/story-entities/registry";
+import { StoryEntityAvatar } from "@/components/story-entity-avatar";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -22,9 +23,13 @@ import { UserMenu } from "@/components/user-menu";
 
 const NAV_ITEMS = [
   { href: "/chat", label: "Chats", icon: MessageSquare },
-  { href: "/characters", label: "Characters", icon: Users },
+  ...STORY_ENTITY_TYPES.map((cfg) => ({
+    href: cfg.href,
+    label: cfg.plural,
+    icon: cfg.icon,
+  })),
   { href: "/content", label: "Content", icon: FileText },
-] as const;
+];
 
 interface AppSidebarProps {
   collapsed?: boolean;
@@ -33,11 +38,11 @@ interface AppSidebarProps {
 
 export function AppSidebar({ collapsed, onToggleCollapse }: AppSidebarProps) {
   const pathname = usePathname();
+  const { chats, chatsLoading, characters } = useAppState();
 
   if (collapsed) {
     return (
       <div className="flex h-full flex-col items-center bg-sidebar py-3">
-        {/* Expand button */}
         {onToggleCollapse && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -54,7 +59,6 @@ export function AppSidebar({ collapsed, onToggleCollapse }: AppSidebarProps) {
           </Tooltip>
         )}
 
-        {/* Icon-only nav */}
         <div className="space-y-1">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const isActive =
@@ -138,46 +142,55 @@ export function AppSidebar({ collapsed, onToggleCollapse }: AppSidebarProps) {
 
       <ScrollArea className="flex-1 px-1">
         <div className="space-y-0.5 px-2">
-          {threads.map((thread) => {
-            const avatar = getAvatarById(thread.avatarId);
-            const isActive = pathname === `/chat/${thread.id}`;
+          {chatsLoading && chats.length === 0 ? (
+            <p className="px-2 py-4 text-xs text-muted-foreground">
+              Loading…
+            </p>
+          ) : chats.length === 0 ? (
+            <p className="px-2 py-4 text-xs text-muted-foreground">
+              No chats yet
+            </p>
+          ) : (
+            chats.map((chat) => {
+              const character = characters.find(
+                (c) => c.id === chat.character_id
+              );
+              const isActive = pathname === `/chat/${chat.id}`;
 
-            return (
-              <Link
-                key={thread.id}
-                href={`/chat/${thread.id}`}
-                className={cn(
-                  "flex items-start gap-2.5 px-2 py-2 text-sm transition-colors rounded-md",
-                  isActive
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent/60"
-                )}
-              >
-                <div
-                  className="mt-0.5 h-5 w-5 shrink-0 rounded-md flex items-center justify-center text-[10px] font-medium text-white"
-                  style={{ backgroundColor: avatar?.color ?? "#8B2E3B" }}
+              return (
+                <Link
+                  key={chat.id}
+                  href={`/chat/${chat.id}`}
+                  className={cn(
+                    "flex items-center gap-2.5 px-2 py-2 text-sm transition-colors rounded-md",
+                    isActive
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground hover:bg-sidebar-accent/60"
+                  )}
                 >
-                  {avatar?.initials ?? "?"}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-medium text-xs">
-                      {thread.title}
-                    </span>
-                    <span
-                      className="text-[10px] text-muted-foreground shrink-0"
-                      suppressHydrationWarning
-                    >
-                      {formatRelativeTime(thread.lastMessageAt)}
-                    </span>
+                  <StoryEntityAvatar
+                    initials={character?.initials ?? "?"}
+                    color={character?.color ?? "#8B2E3B"}
+                    entityType="character"
+                    size="sm"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate font-medium text-xs">
+                        {chat.title ?? "Untitled"}
+                      </span>
+                      <span
+                        className="text-[10px] text-muted-foreground shrink-0"
+                        suppressHydrationWarning
+                      >
+                        {formatRelativeTime(chat.updated_at)}
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                    {thread.preview}
-                  </p>
-                </div>
-              </Link>
-            );
-          })}
+                </Link>
+              );
+            })
+          )}
         </div>
       </ScrollArea>
 

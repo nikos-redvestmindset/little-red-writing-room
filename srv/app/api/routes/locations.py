@@ -13,15 +13,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-class CharacterCreate(BaseModel):
+class LocationCreate(BaseModel):
     name: str
     initials: str
     color: str
 
 
-@router.get("/characters")
+@router.get("/locations")
 @inject
-async def list_characters(
+async def list_locations(
     user_id: str = Depends(get_current_user_id),
     session_service: AvatarSessionService = Depends(
         Provide[ApplicationContainer.avatar_session_service]
@@ -29,7 +29,7 @@ async def list_characters(
 ) -> list[dict]:
     client = session_service.get_supabase_client()
     result = (
-        client.table("characters")
+        client.table("locations")
         .select("id, name, initials, color, created_at")
         .eq("user_id", user_id)
         .order("created_at", desc=False)
@@ -38,10 +38,10 @@ async def list_characters(
     return result.data
 
 
-@router.post("/characters", status_code=201)
+@router.post("/locations", status_code=201)
 @inject
-async def create_character(
-    body: CharacterCreate,
+async def create_location(
+    body: LocationCreate,
     user_id: str = Depends(get_current_user_id),
     session_service: AvatarSessionService = Depends(
         Provide[ApplicationContainer.avatar_session_service]
@@ -50,7 +50,7 @@ async def create_character(
     client = session_service.get_supabase_client()
 
     existing = (
-        client.table("characters")
+        client.table("locations")
         .select("id")
         .eq("user_id", user_id)
         .ilike("name", body.name)
@@ -60,11 +60,11 @@ async def create_character(
     if existing.data:
         raise HTTPException(
             status_code=409,
-            detail=f'A character named "{body.name}" already exists',
+            detail=f'A location named "{body.name}" already exists',
         )
 
     result = (
-        client.table("characters")
+        client.table("locations")
         .insert(
             {
                 "user_id": user_id,
@@ -78,10 +78,10 @@ async def create_character(
     return result.data[0]
 
 
-@router.delete("/characters/{character_id}", status_code=204)
+@router.delete("/locations/{location_id}", status_code=204)
 @inject
-async def delete_character(
-    character_id: str,
+async def delete_location(
+    location_id: str,
     user_id: str = Depends(get_current_user_id),
     session_service: AvatarSessionService = Depends(
         Provide[ApplicationContainer.avatar_session_service]
@@ -89,12 +89,12 @@ async def delete_character(
 ):
     client = session_service.get_supabase_client()
     result = (
-        client.table("characters")
+        client.table("locations")
         .delete()
-        .eq("id", character_id)
+        .eq("id", location_id)
         .eq("user_id", user_id)
         .execute()
     )
     if not result.data:
-        raise HTTPException(status_code=403, detail="Character not found or access denied")
+        raise HTTPException(status_code=403, detail="Location not found or access denied")
     return None

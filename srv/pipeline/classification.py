@@ -35,6 +35,9 @@ class ChunkClassification(BaseModel):
     characters_present: list[str] = Field(
         description="Canonical character names present in or referenced by this chunk.",
     )
+    locations_present: list[str] = Field(
+        description="Canonical location names present in or referenced by this chunk.",
+    )
     story_grid_tag: Literal[
         "inciting_incident",
         "turning_point",
@@ -52,13 +55,15 @@ class ChunkClassification(BaseModel):
 
 
 _CLASSIFICATION_SYSTEM = """\
-You are a fiction analysis assistant. Given a chunk of story text and a list of \
-known character names, classify the chunk according to the requested schema.
+You are a fiction analysis assistant. Given a chunk of story text and lists of \
+known character and location names, classify the chunk according to the requested schema.
 
 Resolve ambiguous pronouns and aliases against the known character list before \
-populating characters_present.
+populating characters_present. Resolve place references and nicknames against \
+the known location list before populating locations_present.
 
 Known characters: {known_characters}
+Known locations: {known_locations}
 
 Classification guide
 --------------------
@@ -108,15 +113,24 @@ _classification_prompt = ChatPromptTemplate.from_messages(
 _MAX_RETRIES = 3
 
 
+def _unpack_entities(known_entities: dict[str, list[str]]) -> tuple[str, str]:
+    """Extract character and location strings from the entities dict."""
+    chars = known_entities.get("character", [])
+    locs = known_entities.get("location", [])
+    chars_str = ", ".join(chars) if chars else "(none provided)"
+    locs_str = ", ".join(locs) if locs else "(none provided)"
+    return chars_str, locs_str
+
+
 # ---------------------------------------------------------------------------
 # Synchronous variant (used by notebooks)
 # ---------------------------------------------------------------------------
 
 
-def _invoke_with_retry(chain, chars_str: str, text: str, verbose: bool) -> ChunkClassification:
+def _invoke_with_retry(chain, chars_str: str, locs_str: str, text: str, verbose: bool) -> ChunkClassification:
     for attempt in range(_MAX_RETRIES):
         try:
-            return chain.invoke({"known_characters": chars_str, "chunk_text": text})
+            return chain.invoke({"known_characters": chars_str, "known_locations": locs_str, "chunk_text": text})
         except Exception as exc:
             if "rate_limit" in str(exc).lower() and attempt < _MAX_RETRIES - 1:
                 wait = 30 * (attempt + 1)
@@ -130,7 +144,7 @@ def _invoke_with_retry(chain, chars_str: str, text: str, verbose: bool) -> Chunk
 
 def classify_chunks(
     chunks: list[Document],
-    known_characters: list[str],
+    known_entities: dict[str, list[str]],
     llm,
     *,
     verbose: bool = False,
@@ -148,10 +162,10 @@ def classify_chunks(
     chain = _classification_prompt | structured_llm
 
     enriched: list[Document] = []
-    chars_str = ", ".join(known_characters) if known_characters else "(none provided)"
+    chars_str, locs_str = _unpack_entities(known_entities)
 
     for i, chunk in enumerate(chunks):
-        classification = _invoke_with_retry(chain, chars_str, chunk.page_content, verbose)
+        classification = _invoke_with_retry(chain, chars_str, locs_str, chunk.page_content, verbose)
         new_meta = {
             **chunk.metadata,
             **classification.model_dump(),
@@ -173,10 +187,10 @@ def classify_chunks(
 # ---------------------------------------------------------------------------
 
 
-async def _ainvoke_with_retry(chain, chars_str: str, text: str) -> ChunkClassification:
+async def _ainvoke_with_retry(chain, chars_str: str, locs_str: str, text: str) -> ChunkClassification:
     for attempt in range(_MAX_RETRIES):
         try:
-            return await chain.ainvoke({"known_characters": chars_str, "chunk_text": text})
+            return await chain.ainvoke({"known_characters": chars_str, "known_locations": locs_str, "chunk_text": text})
         except Exception as exc:
             if "rate_limit" in str(exc).lower() and attempt < _MAX_RETRIES - 1:
                 wait = 30 * (attempt + 1)
@@ -189,7 +203,7 @@ async def _ainvoke_with_retry(chain, chars_str: str, text: str) -> ChunkClassifi
 
 async def classify_chunks_async(
     chunks: list[Document],
-    known_characters: list[str],
+    known_entities: dict[str, list[str]],
     llm,
     on_chunk_classified: Callable[[int, int], Awaitable[None]] | None = None,
 ) -> list[Document]:
@@ -210,10 +224,10 @@ async def classify_chunks_async(
     chain = _classification_prompt | structured_llm
 
     enriched: list[Document] = []
-    chars_str = ", ".join(known_characters) if known_characters else "(none provided)"
+    chars_str, locs_str = _unpack_entities(known_entities)
 
     for i, chunk in enumerate(chunks):
-        classification = await _ainvoke_with_retry(chain, chars_str, chunk.page_content)
+        classification = await _ainvoke_with_retry(chain, chars_str, locs_str, chunk.page_content)
         new_meta = {
             **chunk.metadata,
             **classification.model_dump(),

@@ -7,8 +7,8 @@ The system is split into five layers: frontend, backend, document processing, da
 **Frontend — Vercel (Next.js)**
 The writer interacts with a Next.js chat interface deployed on Vercel. It handles document uploads (.md, .docx), displays streamed character responses with source citations, and manages the conversation UI. It communicates with the backend over REST and server-sent events (SSE) for streaming.
 
-**Backend — Render (FastAPI + LangGraph)**
-A FastAPI server deployed on Render hosts the LangGraph agent. The agent maintains multi-turn conversation state and routes between two tools: a **Character RAG tool** that retrieves grounding context from the writer's own documents via Qdrant, and a **Tavily search tool** that handles writing craft queries (e.g., Story Grid theory) that fall outside the local knowledge base. The agent calls GPT-4o for all LLM completions. Supabase Auth is checked on every request, and conversation threads are persisted to Supabase Postgres.
+**Backend — Vercel (FastAPI + LangGraph)**
+A FastAPI server deployed on Vercel hosts the LangGraph agent. The agent maintains multi-turn conversation state and routes between two tools: a **Character RAG tool** that retrieves grounding context from the writer's own documents via Qdrant, and a **Tavily search tool** that handles writing craft queries (e.g., Story Grid theory) that fall outside the local knowledge base. The agent calls GPT-4o for all LLM completions. Supabase Auth is checked on every request, and conversation threads are persisted to Supabase Postgres.
 
 **Document Processing — Modal**
 An agentic ingestion pipeline runs on Modal. When the writer uploads files through the UI, the pipeline normalizes formats (DOCX → plain text, Markdown parsed directly), chunks the content, extracts metadata (document type: character / scene / setting / worldbuilding), generates embeddings via OpenAI `text-embedding-3-small`, and upserts the vectors into Qdrant. Raw files are stored in Supabase Storage and document metadata is written to Supabase Postgres.
@@ -32,7 +32,7 @@ graph TB
     Frontend -->|REST / SSE| Backend
 
     %% ── Backend ──
-    subgraph Backend["Backend — Render"]
+    subgraph Backend["Backend — Vercel"]
         API["FastAPI Server"]
         Agent["LangGraph Agent<br/><i>Conversation state · Tool routing</i>"]
         RAGTool["Character RAG Tool"]
@@ -121,12 +121,12 @@ This document covers the two core architectural sections of the system: the **Da
 
 ### Shared Infrastructure
 
-Both pipeline options share the same entry and exit points. FastAPI on Render receives the file upload, writes it to temporary storage, creates a Supabase job record with `status: pending`, and fires a Modal function. Modal updates the Supabase job record at each stage. The frontend subscribes to that record via Supabase Realtime and renders progress to the user.
+Both pipeline options share the same entry and exit points. FastAPI on Vercel receives the file upload, writes it to temporary storage, creates a Supabase job record with `status: pending`, and fires a Modal function. Modal updates the Supabase job record at each stage. The frontend subscribes to that record via Supabase Realtime and renders progress to the user.
 
 All state persistence is handled by a **Document Processing Service** that wraps the pipeline. The pipeline itself produces outputs; the service decides what to write to Supabase and when. Neither the pipeline stages nor the Modal functions touch state directly.
 
 ```
-FastAPI (Render)
+FastAPI (Vercel)
   → create job record (Supabase)
   → fire Modal function
     → pipeline stages (Modal)
@@ -308,7 +308,7 @@ The LangGraph graph itself is stateless. It receives a fully assembled input bun
 
 ```
 user message
-  → FastAPI SSE endpoint (Render)
+  → FastAPI SSE endpoint (Vercel)
     → AvatarSessionService
         reads: conversation history (Supabase)
         reads: narrative state (Supabase)
@@ -335,7 +335,7 @@ user message
 flowchart TD
     START([User Message]) --> SERVICE
 
-    subgraph SERVICE["AvatarSessionService (Render / FastAPI)"]
+    subgraph SERVICE["AvatarSessionService (Vercel / FastAPI)"]
         READ["Read from Supabase\nconversation history · narrative state · character registry"]
         WRITE["Write to Supabase\nupdated history · narrative state"]
     end

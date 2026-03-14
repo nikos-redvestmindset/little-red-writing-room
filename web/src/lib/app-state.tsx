@@ -6,14 +6,23 @@ import {
   useState,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   type ReactNode,
 } from "react";
-import type { Character, UploadedFile, ExtractionProgress } from "@/types";
+import type {
+  StoryEntity,
+  ChatSummary,
+  UploadedFile,
+  ExtractionProgress,
+} from "@/types";
+import type { StoryEntityType } from "@/lib/story-entities/registry";
 import {
-  listCharacters as apiListCharacters,
-  createCharacter as apiCreateCharacter,
-  deleteCharacterApi,
+  listStoryEntities,
+  listChats as apiListChats,
+  createStoryEntity as apiCreateStoryEntity,
+  DuplicateStoryEntityError,
+  deleteStoryEntity as apiDeleteStoryEntity,
   uploadDocument,
   listDocuments,
   deleteDocument,
@@ -45,28 +54,52 @@ function pickColor(index: number): string {
   return COLOR_PALETTE[index % COLOR_PALETTE.length];
 }
 
+export type AddStoryEntityResult =
+  | { ok: true }
+  | { ok: false; reason: "duplicate" | "error"; message: string };
+
 interface AppState {
-  characters: Character[];
-  charactersLoading: boolean;
+  entities: StoryEntity[];
+  entitiesLoading: boolean;
+  characters: StoryEntity[];
+  locations: StoryEntity[];
+  chats: ChatSummary[];
+  chatsLoading: boolean;
   files: UploadedFile[];
   filesLoading: boolean;
-  addCharacter: (name: string) => Promise<void>;
-  deleteCharacter: (id: string) => Promise<void>;
+  addStoryEntity: (type: StoryEntityType, name: string) => Promise<AddStoryEntityResult>;
+  deleteStoryEntity: (id: string) => Promise<void>;
   addFile: (file: File) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
-  extractKnowledge: (fileId: string, characterNames: string[]) => void;
+  extractKnowledge: (
+    fileId: string,
+    selectedEntities: Record<string, string[]>,
+    selectedEntityIds: string[],
+  ) => void;
   loadFiles: () => Promise<void>;
-  loadCharacters: () => Promise<void>;
+  loadEntities: () => Promise<void>;
+  loadChats: () => Promise<void>;
 }
 
 const AppStateContext = createContext<AppState | null>(null);
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const [characters, setCharacters] = useState<Character[]>([]);
-  const [charactersLoading, setCharactersLoading] = useState(false);
+  const [entities, setEntities] = useState<StoryEntity[]>([]);
+  const [entitiesLoading, setEntitiesLoading] = useState(false);
+  const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [chatsLoading, setChatsLoading] = useState(false);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const loadedRef = useRef(false);
+
+  const characters = useMemo(
+    () => entities.filter((e) => e.entityType === "character"),
+    [entities]
+  );
+  const locations = useMemo(
+    () => entities.filter((e) => e.entityType === "location"),
+    [entities]
+  );
 
   const updateFile = useCallback(
     (fileId: string, patch: Partial<UploadedFile>) => {
@@ -77,22 +110,39 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const loadCharacters = useCallback(async () => {
-    setCharactersLoading(true);
+  const loadEntities = useCallback(async () => {
+    setEntitiesLoading(true);
     try {
-      const chars = await apiListCharacters();
-      setCharacters(
-        chars.map((c) => ({
-          id: c.id,
-          name: c.name,
-          initials: c.initials,
-          color: c.color,
-        }))
-      );
+      const [chars, locs] = await Promise.all([
+        listStoryEntities("character"),
+        listStoryEntities("location"),
+      ]);
+      const toEntity = (
+        r: { id: string; entity_type: StoryEntityType; name: string; initials: string; color: string }
+      ): StoryEntity => ({
+        id: r.id,
+        entityType: r.entity_type,
+        name: r.name,
+        initials: r.initials,
+        color: r.color,
+      });
+      setEntities([...chars.map(toEntity), ...locs.map(toEntity)]);
     } catch {
       // Backend not available — keep local state
     } finally {
-      setCharactersLoading(false);
+      setEntitiesLoading(false);
+    }
+  }, []);
+
+  const loadChats = useCallback(async () => {
+    setChatsLoading(true);
+    try {
+      const data = await apiListChats();
+      setChats(data);
+    } catch {
+      // Backend not available — keep local state
+    } finally {
+      setChatsLoading(false);
     }
   }, []);
 
@@ -109,6 +159,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           status: d.status as UploadedFile["status"],
           knowledgeExtracted: d.status === "extracted",
           extractionEntities: [],
+          extractedEntityIds: d.extracted_entity_ids ?? [],
           chunksStored: d.chunks_stored,
           errorMessage: d.error_message ?? undefined,
         }))
@@ -123,39 +174,71 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loadedRef.current) {
       loadedRef.current = true;
-      loadCharacters();
+      loadEntities();
+      loadChats();
       loadFiles();
     }
-  }, [loadCharacters, loadFiles]);
+  }, [loadEntities, loadChats, loadFiles]);
 
-  const addCharacter = useCallback(
-    async (name: string) => {
+  const addStoryEntity = useCallback(
+    async (
+      entityType: StoryEntityType,
+      name: string
+    ): Promise<AddStoryEntityResult> => {
       const trimmed = name.trim();
-      if (!trimmed) return;
+      if (!trimmed)
+        return { ok: false, reason: "error", message: "Name is required" };
+
+      const existing = entities.filter((e) => e.entityType === entityType);
+      const duplicate = existing.find(
+        (e) => e.name.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (duplicate) {
+        return {
+          ok: false,
+          reason: "duplicate",
+          message: `"${duplicate.name}" already exists`,
+        };
+      }
+
       const initials = generateInitials(trimmed);
-      const color = pickColor(characters.length);
+      const color = pickColor(existing.length);
       try {
-        const created = await apiCreateCharacter(trimmed, initials, color);
-        setCharacters((prev) => [
+        const created = await apiCreateStoryEntity(
+          entityType,
+          trimmed,
+          initials,
+          color
+        );
+        setEntities((prev) => [
           ...prev,
           {
             id: created.id,
+            entityType: created.entity_type,
             name: created.name,
             initials: created.initials,
             color: created.color,
           },
         ]);
-      } catch {
-        // API failure — don't add locally
+        return { ok: true };
+      } catch (err) {
+        if (err instanceof DuplicateStoryEntityError) {
+          return { ok: false, reason: "duplicate", message: err.message };
+        }
+        return {
+          ok: false,
+          reason: "error",
+          message: `Failed to create ${entityType}`,
+        };
       }
     },
-    [characters.length]
+    [entities]
   );
 
-  const deleteCharacter = useCallback(async (id: string) => {
-    setCharacters((prev) => prev.filter((c) => c.id !== id));
+  const deleteStoryEntity = useCallback(async (id: string) => {
+    setEntities((prev) => prev.filter((e) => e.id !== id));
     try {
-      await deleteCharacterApi(id);
+      await apiDeleteStoryEntity(id);
     } catch {
       // Optimistic removal — don't re-add on failure
     }
@@ -170,6 +253,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       status: "uploading",
       knowledgeExtracted: false,
       extractionEntities: [],
+      extractedEntityIds: [],
     };
     setFiles((prev) => [...prev, placeholder]);
 
@@ -202,33 +286,46 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const extractKnowledge = useCallback(
-    (fileId: string, characterNames: string[]) => {
+    (
+      fileId: string,
+      selectedEntities: Record<string, string[]>,
+      selectedEntityIds: string[],
+    ) => {
+      const allNames = Object.values(selectedEntities).flat();
       updateFile(fileId, {
         status: "extracting",
         extractionProgress: { stage: "starting", progressPct: 0 },
-        extractionEntities: characterNames,
+        extractionEntities: allNames,
       });
 
-      streamExtractKnowledge(fileId, characterNames, "advanced", {
-        onProgress: (e: ExtractionProgress) => {
-          updateFile(fileId, { extractionProgress: e });
-        },
-        onComplete: (e) => {
-          updateFile(fileId, {
-            status: "extracted",
-            knowledgeExtracted: true,
-            chunksStored: e.chunks_stored,
-            extractionProgress: undefined,
-          });
-        },
-        onError: (msg) => {
-          updateFile(fileId, {
-            status: "error",
-            errorMessage: msg,
-            extractionProgress: undefined,
-          });
-        },
-      });
+      streamExtractKnowledge(
+        fileId,
+        selectedEntities,
+        selectedEntityIds,
+        "advanced",
+        {
+          onProgress: (e: ExtractionProgress) => {
+            updateFile(fileId, { extractionProgress: e });
+          },
+          onComplete: (e) => {
+            updateFile(fileId, {
+              status: "extracted",
+              knowledgeExtracted: true,
+              chunksStored: e.chunks_stored,
+              extractedEntityIds: e.extracted_entity_ids ?? selectedEntityIds,
+              extractionProgress: undefined,
+            });
+          },
+          onError: (msg) => {
+            console.error(`[extraction] failed for ${fileId}:`, msg);
+            updateFile(fileId, {
+              status: "error",
+              errorMessage: msg,
+              extractionProgress: undefined,
+            });
+          },
+        }
+      );
     },
     [updateFile]
   );
@@ -236,17 +333,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   return (
     <AppStateContext.Provider
       value={{
+        entities,
+        entitiesLoading,
         characters,
-        charactersLoading,
+        locations,
+        chats,
+        chatsLoading,
         files,
         filesLoading,
-        addCharacter,
-        deleteCharacter,
+        addStoryEntity,
+        deleteStoryEntity,
         addFile,
         deleteFile,
         extractKnowledge,
         loadFiles,
-        loadCharacters,
+        loadEntities,
+        loadChats,
       }}
     >
       {children}

@@ -16,9 +16,12 @@ class PipelineRunner(Protocol):
     async def run(
         self,
         documents: list[Document],
-        known_characters: list[str],
+        known_entities: dict[str, list[str]],
         pipeline_option: str,
         on_progress: ProgressCallback | None = None,
+        document_id: str | None = None,
+        user_id: str | None = None,
+        selected_entity_ids: list[str] | None = None,
     ) -> int: ...
 
 
@@ -34,14 +37,19 @@ class LocalPipelineRunner:
     async def run(
         self,
         documents: list[Document],
-        known_characters: list[str],
+        known_entities: dict[str, list[str]],
         pipeline_option: str,
         on_progress: ProgressCallback | None = None,
+        document_id: str | None = None,
+        user_id: str | None = None,
+        selected_entity_ids: list[str] | None = None,
     ) -> int:
         logger.info("Running pipeline locally (in-process)")
         return await self._pipeline.ingest(
-            documents, known_characters, pipeline_option,
+            documents, known_entities, pipeline_option,
             on_progress=on_progress,
+            document_id=document_id,
+            user_id=user_id,
         )
 
 
@@ -58,17 +66,23 @@ class ModalPipelineRunner:
     async def run(
         self,
         documents: list[Document],
-        known_characters: list[str],
+        known_entities: dict[str, list[str]],
         pipeline_option: str,
         on_progress: ProgressCallback | None = None,
+        document_id: str | None = None,
+        user_id: str | None = None,
+        selected_entity_ids: list[str] | None = None,
     ) -> int:
-        import modal  # lazy import -- only needed when use_modal=True
+        import modal
 
         logger.info("Spawning pipeline on Modal (function=%s)", self._function_name)
         fn = modal.Function.from_name("lrwr-pipeline", self._function_name)
-        fn.spawn(
+        await fn.spawn.aio(
             documents=[doc.model_dump() for doc in documents],
-            known_characters=known_characters,
+            known_entities=known_entities,
             pipeline_option=pipeline_option,
+            document_id=document_id,
+            user_id=user_id,
+            selected_entity_ids=selected_entity_ids or [],
         )
         return 0

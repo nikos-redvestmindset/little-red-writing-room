@@ -6,6 +6,7 @@ import type {
   SSEGapEvent,
   SSEDoneEvent,
 } from "@/types/chat";
+import type { StoryEntityType } from "@/lib/story-entities/registry";
 import type { ExtractionProgress } from "@/types";
 
 function apiUrl(): string {
@@ -58,6 +59,38 @@ export async function listChats(): Promise<
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error(`Failed to list chats: HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function deleteChat(chatId: string): Promise<void> {
+  const token = await getBearerToken();
+  const res = await fetch(`${apiUrl()}/chats/${chatId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok)
+    throw new Error(`Failed to delete chat: HTTP ${res.status}`);
+}
+
+export interface MessageResponse {
+  id: string;
+  chat_id: string;
+  role: "user" | "assistant";
+  content: string;
+  citations: { source: string; text: string }[] | null;
+  gap_flags: { attribute: string; suggestion: string }[] | null;
+  created_at: string;
+}
+
+export async function listMessages(
+  chatId: string
+): Promise<MessageResponse[]> {
+  const token = await getBearerToken();
+  const res = await fetch(`${apiUrl()}/chats/${chatId}/messages`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok)
+    throw new Error(`Failed to list messages: HTTP ${res.status}`);
   return res.json();
 }
 
@@ -114,53 +147,77 @@ export async function streamCharacterChat(
   }
 }
 
-// ── Character APIs ────────────────────────────────────────────────────────────
+// ── Story Entity APIs ─────────────────────────────────────────────────────────
 
-export interface CharacterResponse {
+export interface StoryEntityResponse {
   id: string;
+  entity_type: StoryEntityType;
   name: string;
   initials: string;
   color: string;
   created_at: string;
 }
 
-export async function listCharacters(): Promise<CharacterResponse[]> {
+export async function listStoryEntities(
+  entityType: StoryEntityType
+): Promise<StoryEntityResponse[]> {
   const token = await getBearerToken();
-  const res = await fetch(`${apiUrl()}/characters`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`Failed to list characters: HTTP ${res.status}`);
+  const res = await fetch(
+    `${apiUrl()}/story-entities?type=${encodeURIComponent(entityType)}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok)
+    throw new Error(`Failed to list ${entityType}s: HTTP ${res.status}`);
   return res.json();
 }
 
-export async function createCharacter(
+export class DuplicateStoryEntityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DuplicateStoryEntityError";
+  }
+}
+
+export async function createStoryEntity(
+  entityType: StoryEntityType,
   name: string,
   initials: string,
   color: string
-): Promise<CharacterResponse> {
+): Promise<StoryEntityResponse> {
   const token = await getBearerToken();
-  const res = await fetch(`${apiUrl()}/characters`, {
+  const res = await fetch(`${apiUrl()}/story-entities`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ name, initials, color }),
+    body: JSON.stringify({
+      entity_type: entityType,
+      name,
+      initials,
+      color,
+    }),
   });
+  if (res.status === 409) {
+    const body = await res.json().catch(() => null);
+    throw new DuplicateStoryEntityError(
+      body?.detail ?? `"${name}" already exists`
+    );
+  }
   if (!res.ok) {
-    throw new Error(`Failed to create character: HTTP ${res.status}`);
+    throw new Error(`Failed to create ${entityType}: HTTP ${res.status}`);
   }
   return res.json();
 }
 
-export async function deleteCharacterApi(characterId: string): Promise<void> {
+export async function deleteStoryEntity(entityId: string): Promise<void> {
   const token = await getBearerToken();
-  const res = await fetch(`${apiUrl()}/characters/${characterId}`, {
+  const res = await fetch(`${apiUrl()}/story-entities/${entityId}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok)
-    throw new Error(`Failed to delete character: HTTP ${res.status}`);
+    throw new Error(`Failed to delete entity: HTTP ${res.status}`);
 }
 
 // ── Document APIs ─────────────────────────────────────────────────────────────
@@ -173,6 +230,7 @@ export interface DocumentResponse {
   uploaded_at: string;
   chunks_stored?: number;
   error_message?: string;
+  extracted_entity_ids?: string[];
 }
 
 export async function uploadDocument(file: File): Promise<DocumentResponse> {
@@ -212,11 +270,12 @@ export async function deleteDocument(docId: string): Promise<void> {
 
 export async function streamExtractKnowledge(
   docId: string,
-  selectedCharacters: string[],
+  selectedEntities: Record<string, string[]>,
+  selectedEntityIds: string[],
   pipelineOption: string,
   handlers: {
     onProgress: (e: ExtractionProgress) => void;
-    onComplete: (e: { chunks_stored: number }) => void;
+    onComplete: (e: { chunks_stored: number; extracted_entity_ids: string[] }) => void;
     onError: (msg: string) => void;
   }
 ): Promise<void> {
@@ -229,7 +288,8 @@ export async function streamExtractKnowledge(
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      selected_characters: selectedCharacters,
+      selected_entities: selectedEntities,
+      selected_entity_ids: selectedEntityIds,
       pipeline_option: pipelineOption,
     }),
   });
@@ -243,6 +303,7 @@ export async function streamExtractKnowledge(
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let receivedTerminal = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -266,8 +327,19 @@ export async function streamExtractKnowledge(
           chunksProcessed: payload.chunks_processed,
         });
       }
-      if (eventLine === "complete") handlers.onComplete(payload);
-      if (eventLine === "error") handlers.onError(payload.message);
+      if (eventLine === "complete") {
+        receivedTerminal = true;
+        handlers.onComplete(payload);
+      }
+      if (eventLine === "error") {
+        receivedTerminal = true;
+        handlers.onError(payload.message);
+      }
     }
+  }
+
+  if (!receivedTerminal) {
+    console.error(`[extraction] stream for ${docId} ended without complete/error`);
+    handlers.onError("Connection lost — the file is safe and can be re-extracted");
   }
 }

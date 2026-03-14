@@ -24,6 +24,7 @@ dependencies = [
     "psycopg[binary]",
     "python-multipart",
     "python-docx",
+    "asyncpg>=0.31.0",
 ]
 
 [project.optional-dependencies]

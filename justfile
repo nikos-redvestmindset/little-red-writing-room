@@ -20,8 +20,14 @@ setup-srv:
 
 # ── web (Next.js) ────────────────────────────────────────────────────────────
 
-# start the Next.js dev server
+# start the Next.js dev server with local config (web/.env.local)
 dev-web:
+    cd web && pnpm dev --port 3003
+
+# start the Next.js dev server with cloud config (web/.env.cloud)
+web:
+    #!/usr/bin/env bash
+    set -a; source web/.env.cloud; set +a
     cd web && pnpm dev --port 3003
 
 # build the Next.js production bundle
@@ -38,9 +44,13 @@ lint-web:
 
 # ── srv (FastAPI) ─────────────────────────────────────────────────────────────
 
-# start the FastAPI dev server (reload on file changes)
-dev-srv:
+# start the FastAPI dev server with local in-memory config (reload on file changes)
+dev-api:
     cd srv && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8008
+
+# start the FastAPI server with cloud config (Qdrant Cloud, Modal, APP_ENV=dev)
+api:
+    cd srv && uv run --env-file .env.cloud uvicorn app.main:app --reload --host 0.0.0.0 --port 8008
 
 # run FastAPI tests
 test-srv:
@@ -50,11 +60,47 @@ test-srv:
 lint-srv:
     cd srv && uv run ruff check .
 
+# ── modal (remote pipeline) ───────────────────────────────────────────────────
+
+# first-time Modal setup: install client, create secret, deploy the pipeline app
+create-modal:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; source srv/.env.cloud; set +a
+    cd srv
+    uv sync --extra modal
+    echo "Creating Modal secret 'lrwr-env'..."
+    uv run modal secret create lrwr-env \
+        APP_SUPABASE_URL="$APP_SUPABASE_URL" \
+        APP_SUPABASE_SERVICE_KEY="$APP_SUPABASE_SERVICE_KEY" \
+        APP_OPENAI_API_KEY="$APP_OPENAI_API_KEY" \
+        OPENAI_API_KEY="$APP_OPENAI_API_KEY" \
+        PIPELINE_COLLECTION_NAME="$PIPELINE_COLLECTION_NAME" \
+        PIPELINE_EMBEDDING_MODEL="$PIPELINE_EMBEDDING_MODEL" \
+        PIPELINE_CLASSIFICATION_MODEL="$PIPELINE_CLASSIFICATION_MODEL" \
+        PIPELINE_QDRANT_URL="$PIPELINE_QDRANT_URL" \
+        PIPELINE_QDRANT_API_KEY="$PIPELINE_QDRANT_API_KEY"
+    echo "Deploying Modal app 'lrwr-pipeline'..."
+    uv run modal deploy pipeline/modal_app.py
+    echo "Done. The pipeline is now available on Modal."
+
+# redeploy the Modal pipeline app (after code changes)
+deploy-modal:
+    cd srv && uv run --env-file .env.cloud modal deploy pipeline/modal_app.py
+
+# smoke-test the deployed Modal pipeline with a sample document
+test-modal:
+    cd srv && uv run --extra modal --env-file .env.cloud python -m scripts.test_modal
+
 # ── database ──────────────────────────────────────────────────────────────────
 
 # apply pending Supabase migrations
 migrate:
     cd srv && uv run python -m scripts.migrate
+
+# wipe all RAG state: Qdrant collection + Supabase extraction tables (DESTRUCTIVE)
+reset-rag:
+    cd srv && uv run --env-file .env.cloud python -m scripts.reset_rag
 
 # ── notebooks ────────────────────────────────────────────────────────────────
 
@@ -69,9 +115,6 @@ run-notebook:
 
 # ── combined ─────────────────────────────────────────────────────────────────
 
-# run both dev servers concurrently (requires a terminal multiplexer or parallel)
-dev:
-    just dev-srv & just dev-web
 
 # run all tests
 test: test-web test-srv

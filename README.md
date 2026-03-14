@@ -165,14 +165,92 @@ Repeat for the second file. Extract both files before starting a chat.
 
 ---
 
+## Running with cloud config (Qdrant Cloud + Modal pipeline)
+
+For production or cloud-connected development, the backend uses Qdrant Cloud for vector storage and Modal for remote pipeline execution. The frontend and backend still run locally, but document extraction runs on Modal's infrastructure.
+
+### Prerequisites
+
+You need accounts and credentials for:
+
+| Service | What for | Where to get credentials |
+| --- | --- | --- |
+| **Qdrant Cloud** | Vector store | [cloud.qdrant.io](https://cloud.qdrant.io/) — create a cluster, copy the URL and API key |
+| **Modal** | Remote pipeline execution | [modal.com](https://modal.com/) — sign up, then go to Settings → API Tokens |
+
+Add these to `srv/.env.cloud` (copy from `srv/.env.example` and fill in):
+
+```
+PIPELINE_USE_MODAL=true
+MODAL_TOKEN_ID=your-modal-token-id
+MODAL_TOKEN_SECRET=your-modal-token-secret
+PIPELINE_QDRANT_URL=https://your-cluster.cloud.qdrant.io
+PIPELINE_QDRANT_API_KEY=your-qdrant-api-key
+```
+
+### 1. Deploy the Modal pipeline (first time)
+
+```bash
+just create-modal
+```
+
+This installs the Modal client, creates a Modal secret called `lrwr-env` (containing your Supabase, OpenAI, Qdrant, and pipeline credentials), and deploys the `lrwr-pipeline` app to Modal.
+
+### 2. Start the servers with cloud config
+
+```bash
+# Terminal 1 — backend with cloud config
+just api
+
+# Terminal 2 — frontend with cloud config
+just web
+```
+
+### 3. Redeploying after code changes
+
+If you modify `srv/pipeline/modal_app.py` or any pipeline code, redeploy with:
+
+```bash
+just deploy-modal
+```
+
+If you change environment variables in `srv/.env.cloud`, re-run `just create-modal` to update the Modal secret.
+
+### 4. Resetting RAG state
+
+To wipe all extraction data and start fresh (e.g. after changing the embedding model or cleaning up bad extractions):
+
+```bash
+just reset-rag
+```
+
+This deletes and recreates the Qdrant collection, clears extraction tracking rows in Supabase, and resets all document statuses back to "uploaded". You can then re-extract documents from the UI.
+
+### 5. Smoke-testing the Modal pipeline
+
+To verify the Modal deployment is working without going through the UI:
+
+```bash
+just test-modal
+```
+
+This sends a sample document through the deployed Modal function using an isolated test collection, then cleans up after itself.
+
+---
+
 ## Available `just` commands
 
 ```
 just setup          # install all dependencies
-just dev            # run both servers concurrently
-just dev-srv        # FastAPI backend only
-just dev-web        # Next.js frontend only
+just dev-api        # FastAPI backend (local/in-memory config)
+just dev-web        # Next.js frontend (local config)
+just api            # FastAPI backend (cloud config)
+just web            # Next.js frontend (cloud config)
 just migrate        # apply database migrations
+just create-modal   # first-time Modal setup (install, create secret, deploy)
+just deploy-modal   # redeploy Modal app after code changes
+just test-modal     # smoke-test the deployed Modal pipeline
+just reset-rag      # wipe Qdrant collection + Supabase extraction state
 just test           # run all tests
 just run-notebook   # launch Jupyter Lab
 ```
