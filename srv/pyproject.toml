@@ -25,10 +25,10 @@ dependencies = [
     "python-multipart",
     "python-docx",
     "asyncpg>=0.31.0",
+    "modal",
 ]
 
 [project.optional-dependencies]
-modal = ["modal"]
 dev = [
     "pytest",
     "pytest-asyncio",

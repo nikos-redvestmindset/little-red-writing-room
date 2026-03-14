@@ -138,6 +138,25 @@ class SupabaseProgressNotifier:
 
         await conn.add_listener(channel, _on_notification)
         try:
+            # Poll current row state to catch notifications that fired
+            # before our LISTEN was active (e.g. pipeline failed instantly).
+            row = (
+                self._client.table(PROCESSING_JOBS_TABLE)
+                .select("current_stage, progress_pct, chunks_total, chunks_processed, message")
+                .eq("document_id", document_id)
+                .maybe_single()
+                .execute()
+            )
+            if row.data and row.data.get("current_stage") in _TERMINAL_STAGES:
+                yield ProgressEvent(
+                    stage=row.data["current_stage"],
+                    progress_pct=row.data.get("progress_pct", 0),
+                    chunks_total=row.data.get("chunks_total"),
+                    chunks_processed=row.data.get("chunks_processed"),
+                    message=row.data.get("message", ""),
+                )
+                return
+
             while True:
                 payload = await asyncio.wait_for(queue.get(), timeout=60)
                 event = ProgressEvent.model_validate(json.loads(payload))

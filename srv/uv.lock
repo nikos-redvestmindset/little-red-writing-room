@@ -1427,6 +1427,7 @@ dependencies = [
     { name = "langchain-tavily" },
     { name = "langchain-text-splitters" },
     { name = "langgraph" },
+    { name = "modal" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
     { name = "python-docx" },
@@ -1445,9 +1446,6 @@ dev = [
     { name = "pytest-mock" },
     { name = "ruff" },
 ]
-modal = [
-    { name = "modal" },
-]
 
 [package.metadata]
 requires-dist = [
@@ -1465,7 +1463,7 @@ requires-dist = [
     { name = "langchain-tavily" },
     { name = "langchain-text-splitters" },
     { name = "langgraph" },
-    { name = "modal", marker = "extra == 'modal'" },
+    { name = "modal" },
     { name = "psycopg", extras = ["binary"] },
     { name = "pydantic-settings" },
     { name = "pytest", marker = "extra == 'dev'" },
@@ -1479,7 +1477,7 @@ requires-dist = [
     { name = "supabase" },
     { name = "uvicorn", extras = ["standard"] },
 ]
-provides-extras = ["modal", "dev"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "lxml"
