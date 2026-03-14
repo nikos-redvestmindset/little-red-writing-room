@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Awaitable, Callable
 
 from langchain_core.documents import Document
@@ -225,10 +226,12 @@ class IngestionPipelineService:
         for field in self._PAYLOAD_INDEXES:
             if field not in existing_indexes:
                 try:
-                    self._qdrant_client.create_payload_index(
-                        collection_name=self._settings.collection_name,
-                        field_name=field,
-                        field_schema=models.PayloadSchemaType.KEYWORD,
-                    )
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", UserWarning)
+                        self._qdrant_client.create_payload_index(
+                            collection_name=self._settings.collection_name,
+                            field_name=field,
+                            field_schema=models.PayloadSchemaType.KEYWORD,
+                        )
                 except Exception:
                     pass

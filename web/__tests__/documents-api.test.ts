@@ -152,7 +152,7 @@ describe("streamExtractKnowledge", () => {
     vi.stubEnv("NEXT_PUBLIC_API_URL", "http://localhost:8008");
   });
 
-  it("sends extract request with characters and pipeline option", async () => {
+  it("sends extract request with entities and pipeline option", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       body: createSSEStream([
@@ -163,7 +163,8 @@ describe("streamExtractKnowledge", () => {
 
     await streamExtractKnowledge(
       "doc-1",
-      ["PurpleFrog", "SnowRaven"],
+      { character: ["PurpleFrog", "SnowRaven"] },
+      ["id-1", "id-2"],
       "advanced",
       {
         onProgress: () => {},
@@ -181,7 +182,8 @@ describe("streamExtractKnowledge", () => {
           "Content-Type": "application/json",
         }),
         body: JSON.stringify({
-          selected_characters: ["PurpleFrog", "SnowRaven"],
+          selected_entities: { character: ["PurpleFrog", "SnowRaven"] },
+          selected_entity_ids: ["id-1", "id-2"],
           pipeline_option: "advanced",
         }),
       })
@@ -202,7 +204,7 @@ describe("streamExtractKnowledge", () => {
       })
     );
 
-    await streamExtractKnowledge("doc-1", ["PurpleFrog"], "advanced", {
+    await streamExtractKnowledge("doc-1", { character: ["PurpleFrog"] }, ["id-1"], "advanced", {
       onProgress: (e) => progressEvents.push(e),
       onComplete: () => {},
       onError: () => {},
@@ -237,7 +239,7 @@ describe("streamExtractKnowledge", () => {
       })
     );
 
-    await streamExtractKnowledge("doc-1", ["PurpleFrog"], "advanced", {
+    await streamExtractKnowledge("doc-1", { character: ["PurpleFrog"] }, ["id-1"], "advanced", {
       onProgress: () => {},
       onComplete: (e) => {
         completedChunks = e.chunks_stored;
@@ -261,7 +263,7 @@ describe("streamExtractKnowledge", () => {
       })
     );
 
-    await streamExtractKnowledge("doc-1", ["PurpleFrog"], "advanced", {
+    await streamExtractKnowledge("doc-1", { character: ["PurpleFrog"] }, ["id-1"], "advanced", {
       onProgress: () => {},
       onComplete: () => {},
       onError: (msg) => {
@@ -283,7 +285,7 @@ describe("streamExtractKnowledge", () => {
       })
     );
 
-    await streamExtractKnowledge("doc-1", ["PurpleFrog"], "advanced", {
+    await streamExtractKnowledge("doc-1", { character: ["PurpleFrog"] }, ["id-1"], "advanced", {
       onProgress: () => {},
       onComplete: () => {},
       onError: (msg) => {
@@ -314,7 +316,8 @@ describe("streamExtractKnowledge", () => {
 
     await streamExtractKnowledge(
       "doc-1",
-      ["PurpleFrog", "SnowRaven"],
+      { character: ["PurpleFrog", "SnowRaven"] },
+      ["id-1", "id-2"],
       "advanced",
       {
         onProgress: (e) => events.push(`progress:${e.stage}:${e.progressPct}`),

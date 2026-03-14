@@ -62,6 +62,16 @@ export async function listChats(): Promise<
   return res.json();
 }
 
+export async function deleteChat(chatId: string): Promise<void> {
+  const token = await getBearerToken();
+  const res = await fetch(`${apiUrl()}/chats/${chatId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok)
+    throw new Error(`Failed to delete chat: HTTP ${res.status}`);
+}
+
 export interface MessageResponse {
   id: string;
   chat_id: string;

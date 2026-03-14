@@ -23,9 +23,12 @@ const mockUploadDocument = vi.fn();
 const mockListDocuments = vi.fn();
 const mockDeleteDocument = vi.fn();
 const mockStreamExtractKnowledge = vi.fn();
-const mockListCharacters = vi.fn().mockResolvedValue([
+const mockListStoryEntities = vi.fn();
+
+const mockCharacters = [
   {
     id: "purplefrog",
+    entity_type: "character",
     name: "PurpleFrog",
     initials: "PF",
     color: "#7C3AED",
@@ -33,6 +36,7 @@ const mockListCharacters = vi.fn().mockResolvedValue([
   },
   {
     id: "snowraven",
+    entity_type: "character",
     name: "SnowRaven",
     initials: "SR",
     color: "#64748B",
@@ -40,6 +44,7 @@ const mockListCharacters = vi.fn().mockResolvedValue([
   },
   {
     id: "ochramags",
+    entity_type: "character",
     name: "OchraMags",
     initials: "OM",
     color: "#D97706",
@@ -47,17 +52,25 @@ const mockListCharacters = vi.fn().mockResolvedValue([
   },
   {
     id: "myaxserp",
+    entity_type: "character",
     name: "MyaxSerp",
     initials: "MY",
     color: "#DC2626",
     created_at: "2024-01-01",
   },
-]);
+];
+
+function setupEntityMock() {
+  mockListStoryEntities.mockImplementation((type: string) =>
+    Promise.resolve(type === "character" ? mockCharacters : [])
+  );
+}
 
 vi.mock("@/lib/api", () => ({
-  listCharacters: (...args: unknown[]) => mockListCharacters(...args),
-  createCharacter: vi.fn(),
-  deleteCharacterApi: vi.fn(),
+  listStoryEntities: (...args: unknown[]) => mockListStoryEntities(...args),
+  createStoryEntity: vi.fn(),
+  deleteStoryEntity: vi.fn(),
+  DuplicateStoryEntityError: class DuplicateStoryEntityError extends Error {},
   uploadDocument: (...args: unknown[]) => mockUploadDocument(...args),
   listDocuments: (...args: unknown[]) => mockListDocuments(...args),
   deleteDocument: (...args: unknown[]) => mockDeleteDocument(...args),
@@ -67,11 +80,14 @@ vi.mock("@/lib/api", () => ({
 
 import ContentPage from "@/app/(app)/content/page";
 import { AppStateProvider } from "@/lib/app-state";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 function renderContentPage() {
   return render(
     <AppStateProvider>
-      <ContentPage />
+      <TooltipProvider>
+        <ContentPage />
+      </TooltipProvider>
     </AppStateProvider>
   );
 }
@@ -79,6 +95,7 @@ function renderContentPage() {
 describe("ContentPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setupEntityMock();
     mockListDocuments.mockResolvedValue([]);
   });
 
@@ -217,6 +234,7 @@ describe("ContentPage", () => {
 describe("ContentPage upload flow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setupEntityMock();
     mockListDocuments.mockResolvedValue([]);
   });
 
@@ -256,6 +274,7 @@ describe("ContentPage upload flow", () => {
 describe("ContentPage extract dialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setupEntityMock();
     mockListDocuments.mockResolvedValue([
       {
         id: "doc-1",
@@ -281,7 +300,7 @@ describe("ContentPage extract dialog", () => {
     await waitFor(() => {
       expect(screen.getByText("Extract Knowledge")).toBeInTheDocument();
       expect(
-        screen.getByText(/Select characters to extract knowledge about from/)
+        screen.getByText(/Select entities to extract knowledge about from/)
       ).toBeInTheDocument();
     });
   });
@@ -320,7 +339,8 @@ describe("ContentPage extract dialog", () => {
     mockStreamExtractKnowledge.mockImplementation(
       async (
         _docId: string,
-        _chars: string[],
+        _selectedEntities: Record<string, string[]>,
+        _selectedEntityIds: string[],
         _opt: string,
         handlers: {
           onProgress: (e: ExtractionProgress) => void;
@@ -351,7 +371,8 @@ describe("ContentPage extract dialog", () => {
     await waitFor(() => {
       expect(mockStreamExtractKnowledge).toHaveBeenCalledWith(
         "doc-1",
-        ["PurpleFrog"],
+        expect.objectContaining({ character: ["PurpleFrog"] }),
+        ["purplefrog"],
         "advanced",
         expect.objectContaining({
           onProgress: expect.any(Function),
@@ -372,7 +393,8 @@ describe("ContentPage extract dialog", () => {
     mockStreamExtractKnowledge.mockImplementation(
       async (
         _docId: string,
-        _chars: string[],
+        _selectedEntities: Record<string, string[]>,
+        _selectedEntityIds: string[],
         _opt: string,
         handlers: typeof capturedHandlers
       ) => {
@@ -417,7 +439,8 @@ describe("ContentPage extract dialog", () => {
     mockStreamExtractKnowledge.mockImplementation(
       async (
         _docId: string,
-        _chars: string[],
+        _selectedEntities: Record<string, string[]>,
+        _selectedEntityIds: string[],
         _opt: string,
         handlers: {
           onProgress: (e: ExtractionProgress) => void;
@@ -459,7 +482,8 @@ describe("ContentPage extract dialog", () => {
     mockStreamExtractKnowledge.mockImplementation(
       async (
         _docId: string,
-        _chars: string[],
+        _selectedEntities: Record<string, string[]>,
+        _selectedEntityIds: string[],
         _opt: string,
         handlers: {
           onProgress: (e: ExtractionProgress) => void;
@@ -497,6 +521,7 @@ describe("ContentPage extract dialog", () => {
 describe("ContentPage delete flow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setupEntityMock();
     mockListDocuments.mockResolvedValue([
       {
         id: "doc-1",
@@ -535,6 +560,7 @@ describe("ContentPage delete flow", () => {
 describe("ContentPage graceful degradation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setupEntityMock();
   });
 
   it("still renders when backend is unavailable", async () => {
