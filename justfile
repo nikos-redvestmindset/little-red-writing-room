@@ -90,13 +90,17 @@ deploy-modal:
 
 # smoke-test the deployed Modal pipeline with a sample document
 test-modal:
-    cd srv && uv run --env-file .env.cloud python -m scripts.test_modal
+    cd srv && uv run --extra modal --env-file .env.cloud python -m scripts.test_modal
 
 # ── database ──────────────────────────────────────────────────────────────────
 
 # apply pending Supabase migrations
 migrate:
     cd srv && uv run python -m scripts.migrate
+
+# wipe all RAG state: Qdrant collection + Supabase extraction tables (DESTRUCTIVE)
+reset-rag:
+    cd srv && uv run --env-file .env.cloud python -m scripts.reset_rag
 
 # ── notebooks ────────────────────────────────────────────────────────────────
 

@@ -13,7 +13,6 @@ which calls ``modal.Function.from_name("lrwr-pipeline", "process_document")``.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import modal
 
@@ -35,7 +34,7 @@ image = (
         "pydantic-settings",
         "supabase",
     )
-    .add_local_dir(Path(__file__).parent, remote_path="/root/pipeline")
+    .add_local_python_source("pipeline")
 )
 
 PROCESSING_JOBS_TABLE = "processing_jobs"
@@ -61,6 +60,7 @@ async def process_document(
     document_id: str | None = None,
     user_id: str | None = None,
     selected_entity_ids: list[str] | None = None,
+    collection_name: str | None = None,
 ) -> int:
     """Modal entry point.
 
@@ -88,6 +88,9 @@ async def process_document(
     from pipeline.service import IngestionPipelineService
 
     settings = IngestionPipelineSettings()
+    if collection_name:
+        settings.collection_name = collection_name
+
     qdrant_client = QdrantClient(
         url=settings.qdrant_url,
         api_key=settings.qdrant_api_key,

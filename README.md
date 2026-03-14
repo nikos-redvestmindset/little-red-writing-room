@@ -216,6 +216,26 @@ just deploy-modal
 
 If you change environment variables in `srv/.env.cloud`, re-run `just create-modal` to update the Modal secret.
 
+### 4. Resetting RAG state
+
+To wipe all extraction data and start fresh (e.g. after changing the embedding model or cleaning up bad extractions):
+
+```bash
+just reset-rag
+```
+
+This deletes and recreates the Qdrant collection, clears extraction tracking rows in Supabase, and resets all document statuses back to "uploaded". You can then re-extract documents from the UI.
+
+### 5. Smoke-testing the Modal pipeline
+
+To verify the Modal deployment is working without going through the UI:
+
+```bash
+just test-modal
+```
+
+This sends a sample document through the deployed Modal function using an isolated test collection, then cleans up after itself.
+
 ---
 
 ## Available `just` commands
@@ -229,6 +249,8 @@ just web            # Next.js frontend (cloud config)
 just migrate        # apply database migrations
 just create-modal   # first-time Modal setup (install, create secret, deploy)
 just deploy-modal   # redeploy Modal app after code changes
+just test-modal     # smoke-test the deployed Modal pipeline
+just reset-rag      # wipe Qdrant collection + Supabase extraction state
 just test           # run all tests
 just run-notebook   # launch Jupyter Lab
 ```
