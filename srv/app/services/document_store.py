@@ -143,6 +143,10 @@ class SupabaseDocumentStore:
                     "Failed to remove storage object %s", record.storage_path, exc_info=True,
                 )
 
+        self._client.table("document_entity_extractions").delete().eq(
+            "document_id", doc_id
+        ).eq("user_id", user_id).execute()
+
         self._client.table("documents").delete().eq("id", doc_id).eq("user_id", user_id).execute()
         return True
 

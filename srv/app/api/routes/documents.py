@@ -341,8 +341,12 @@ async def delete_document(
     document_id: str,
     user_id: str = Depends(get_current_user_id),
     store: DocumentStore = Depends(Provide[ApplicationContainer.document_store]),
+    pipeline: IngestionPipelineService = Depends(Provide[ApplicationContainer.ingestion_pipeline]),
 ):
-    deleted = await store.delete(user_id, document_id)
-    if not deleted:
+    record = await store.get(user_id, document_id)
+    if record is None:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    pipeline.delete_document_chunks(document_id, user_id)
+    await store.delete(user_id, document_id)
     return None
